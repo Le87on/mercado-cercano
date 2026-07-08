@@ -1,6 +1,6 @@
 import { Star, Truck, MapPin, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { formatARS, type Product, useMarketplace } from "@/lib/marketplace-store";
+import { formatARS, type Product, useCart } from "@/lib/marketplace-store";
 import { toast } from "sonner";
 
 function Stars({ rating }: { rating: number }) {
@@ -25,13 +25,16 @@ function Stars({ rating }: { rating: number }) {
 }
 
 export function ProductCard({ product }: { product: Product }) {
-  const { addToCart } = useMarketplace();
+  const { addToCart } = useCart();
+  const image =
+    product.image_url ||
+    "https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?w=600&auto=format&fit=crop";
 
   return (
     <article className="group flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-brand/5">
       <div className="relative aspect-square overflow-hidden bg-muted">
         <img
-          src={product.image}
+          src={image}
           alt={product.title}
           loading="lazy"
           className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
@@ -56,11 +59,11 @@ export function ProductCard({ product }: { product: Product }) {
         <div className="text-lg font-bold text-foreground">
           {formatARS(product.price)}
         </div>
-        <Stars rating={product.rating} />
+        <Stars rating={product.seller_rating ?? 4.5} />
         <div className="flex items-center gap-1 text-xs text-muted-foreground">
           <MapPin className="h-3 w-3 shrink-0" />
           <span className="truncate">
-            {product.seller} · {product.city}
+            {product.seller_name || "Vendedor"} · {product.city || "Argentina"}
           </span>
         </div>
         <Button

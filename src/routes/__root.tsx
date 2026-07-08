@@ -11,7 +11,8 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
-import { MarketplaceProvider } from "@/lib/marketplace-store";
+import { CartProvider } from "@/lib/marketplace-store";
+import { AuthProvider } from "@/lib/auth";
 import { Header } from "@/components/marketplace/Header";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -125,13 +126,15 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <MarketplaceProvider>
-        <div className="min-h-screen bg-background">
-          <Header />
-          <Outlet />
-        </div>
-        <Toaster position="top-right" richColors />
-      </MarketplaceProvider>
+      <AuthProvider>
+        <CartProvider>
+          <div className="min-h-screen bg-background">
+            <Header />
+            <Outlet />
+          </div>
+          <Toaster position="top-right" richColors />
+        </CartProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }
