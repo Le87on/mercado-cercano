@@ -1,46 +1,31 @@
 # A la Vuelta · Marketplace local
 
-MVP React/Vite para una app tipo marketplace local, armado a partir del prototipo `ALaVuelta.jsx` y del Excel limpio de comercios.
+MVP de marketplace local para comercios de cercanía, adaptado sobre la base existente del repositorio `mercado-cercano`.
 
 ## Qué incluye
 
-- Catálogo inicial con **101 comercios** importados desde `lumen_local_catalogo_app_limpio.xlsx`.
-- Modo cliente:
-  - buscador de comercios;
-  - filtros por localidad y categoría;
-  - vista de productos;
-  - reservas/compras simuladas;
-  - seguimiento de pedidos.
-- Modo comercio:
-  - reclamar comercio existente de la base;
-  - crear comercio manual en borrador;
-  - cargar productos;
-  - manejar stock;
-  - gestionar pedidos.
-- Panel admin:
-  - conteo de comercios, productos y pedidos;
-  - distribución por localidad y categoría;
-  - reinicio de demo.
-- PWA básica:
-  - manifest;
-  - ícono SVG;
-  - service worker simple para instalación/caché en build de producción.
+- Catálogo inicial con **101 comercios locales** de San Carlos, Eugenio Bustos, La Consulta, Pareditas, Chilecito, Tunuyán y zonas cercanas.
+- Buscador por comercio, rubro, descripción y localidad.
+- Filtros por localidad, categoría y modalidad.
+- Cards de comercios consultables.
+- Carrito/guardados para armar consultas o reservas.
+- Funcionamiento standalone: el catálogo inicial corre sin Supabase.
+- Supabase queda como próximo paso para usuarios, comercios, productos reales y pedidos persistentes.
 
 ## Importante
 
-El MVP **no publica WhatsApp automáticamente** porque el Excel limpio deja ese campo vacío hasta que cada comercio autorice contacto público.
+El MVP no publica WhatsApp automáticamente. Los contactos deben agregarse solo cuando cada comercio autorice su publicación.
 
-No incluye datos sensibles como CUIT, CBU, IIBB, mail privado ni razón social legal.
+No se exponen CUIT, CBU, IIBB, mails privados ni razón social legal.
 
 ## Cómo correrlo
 
 ```bash
-cd a-la-vuelta-local
 npm install
 npm run dev
 ```
 
-Abrir:
+Abrir el link local que muestre Vite/Lovable, normalmente:
 
 ```bash
 http://localhost:5173
