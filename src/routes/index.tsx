@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { Search, MapPin, SlidersHorizontal, X } from "lucide-react";
+import { Search, MapPin, SlidersHorizontal, X, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -11,14 +11,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { AR_CITIES, formatARS, useMarketplace } from "@/lib/marketplace-store";
+import { AR_CITIES, formatARS, useProducts, type Product } from "@/lib/marketplace-store";
 import { ProductCard } from "@/components/marketplace/ProductCard";
 
 export const Route = createFileRoute("/")({
   component: Index,
 });
 
-const CATEGORIES = ["Todas", "Electrónica", "Hogar", "Indumentaria", "Deportes"];
+const CATEGORIES = ["Todas", "Electrónica", "Hogar", "Indumentaria", "Deportes", "Otros"];
 const SHIPPING = [
   { v: "todos", label: "Cualquier entrega" },
   { v: "envio", label: "Envío local" },
@@ -35,7 +35,7 @@ const PRICE_MIN = 0;
 const PRICE_MAX = 1_000_000;
 
 function Index() {
-  const { products } = useMarketplace();
+  const { data: products = [], isLoading, error } = useProducts();
   const [q, setQ] = useState("");
   const [city, setCity] = useState(AR_CITIES[0]);
   const [category, setCategory] = useState("Todas");
@@ -54,7 +54,7 @@ function Index() {
     priceActive;
 
   const filtered = useMemo(() => {
-    const result = products.filter((p) => {
+    const result = products.filter((p: Product) => {
       if (q && !p.title.toLowerCase().includes(q.toLowerCase())) return false;
       if (city !== AR_CITIES[0] && p.city !== city) return false;
       if (category !== "Todas" && p.category !== category) return false;
@@ -67,13 +67,15 @@ function Index() {
     });
     switch (sort) {
       case "precio_asc":
-        result.sort((a, b) => a.price - b.price);
+        result.sort((a: Product, b: Product) => a.price - b.price);
         break;
       case "precio_desc":
-        result.sort((a, b) => b.price - a.price);
+        result.sort((a: Product, b: Product) => b.price - a.price);
         break;
       case "reputacion":
-        result.sort((a, b) => b.rating - a.rating);
+        result.sort(
+          (a: Product, b: Product) => (b.seller_rating ?? 0) - (a.seller_rating ?? 0),
+        );
         break;
     }
     return result;
@@ -90,7 +92,6 @@ function Index() {
 
   return (
     <main>
-      {/* Hero + search */}
       <section className="border-b border-border bg-gradient-to-b from-brand/5 to-background">
         <div className="mx-auto max-w-7xl px-4 py-8 sm:py-12">
           <div className="mb-6 text-center">
@@ -130,10 +131,8 @@ function Index() {
         </div>
       </section>
 
-      {/* Filters + grid */}
       <section className="mx-auto max-w-7xl px-4 py-6">
         <div className="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
-          {/* Sidebar filters */}
           <aside className="h-fit space-y-5 rounded-xl border border-border bg-card p-5 lg:sticky lg:top-20">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
@@ -212,12 +211,11 @@ function Index() {
             </FilterGroup>
           </aside>
 
-          {/* Grid */}
           <div>
             <div className="mb-4 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
               <span className="truncate text-sm font-medium text-foreground">
-                {filtered.length} resultado{filtered.length === 1 ? "" : "s"}
-                {priceActive && (
+                {isLoading ? "Cargando…" : `${filtered.length} resultado${filtered.length === 1 ? "" : "s"}`}
+                {priceActive && !isLoading && (
                   <span className="ml-2 text-xs font-normal text-muted-foreground">
                     · {formatARS(minPrice)} – {maxPrice >= PRICE_MAX ? "+" : formatARS(maxPrice)}
                   </span>
@@ -242,26 +240,33 @@ function Index() {
               </div>
             </div>
 
-            {filtered.length === 0 ? (
+            {error ? (
+              <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-6 text-sm text-destructive">
+                No pudimos cargar los productos. Intentá recargar la página.
+              </div>
+            ) : isLoading ? (
+              <div className="grid place-items-center rounded-xl border border-dashed border-border bg-card p-16 text-muted-foreground">
+                <Loader2 className="h-6 w-6 animate-spin" />
+              </div>
+            ) : filtered.length === 0 ? (
               <div className="rounded-xl border border-dashed border-border bg-card p-10 text-center">
-                <p className="text-sm font-medium text-foreground">Sin resultados</p>
+                <p className="text-sm font-medium text-foreground">
+                  {products.length === 0 ? "Todavía no hay productos" : "Sin resultados"}
+                </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Probá con otra búsqueda, ampliá la ubicación o el rango de precio.
+                  {products.length === 0
+                    ? "Sé el primero en publicar desde el panel de vendedor."
+                    : "Probá con otra búsqueda o ampliá el rango de precio."}
                 </p>
                 {anyFilterActive && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-4"
-                    onClick={resetFilters}
-                  >
+                  <Button variant="outline" size="sm" className="mt-4" onClick={resetFilters}>
                     Limpiar filtros
                   </Button>
                 )}
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
-                {filtered.map((p) => (
+                {filtered.map((p: Product) => (
                   <ProductCard key={p.id} product={p} />
                 ))}
               </div>

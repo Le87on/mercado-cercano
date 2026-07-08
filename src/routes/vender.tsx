@@ -1,6 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { Package, DollarSign, Boxes, ImagePlus, Store } from "lucide-react";
+import { Package, DollarSign, Boxes, ImagePlus, Store, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,7 +12,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { AR_CITIES, formatARS, useMarketplace } from "@/lib/marketplace-store";
+import {
+  AR_CITIES,
+  formatARS,
+  useMyProducts,
+  useCreateProduct,
+  type Product,
+} from "@/lib/marketplace-store";
+import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/vender")({
@@ -28,7 +35,10 @@ export const Route = createFileRoute("/vender")({
 const CATS = ["Electrónica", "Hogar", "Indumentaria", "Deportes", "Otros"];
 
 function SellerPage() {
-  const { addProduct, products } = useMarketplace();
+  const { user, loading } = useAuth();
+  const { data: myProducts = [] } = useMyProducts();
+  const createProduct = useCreateProduct();
+
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState("");
   const [stock, setStock] = useState("1");
@@ -46,32 +56,64 @@ function SellerPage() {
     stockNum > 0 &&
     description.trim().length >= 10;
 
-  const submit = () => {
+  if (loading) {
+    return (
+      <main className="mx-auto max-w-3xl px-4 py-16 text-center text-muted-foreground">
+        Cargando…
+      </main>
+    );
+  }
+
+  if (!user) {
+    return (
+      <main className="mx-auto max-w-md px-4 py-16 text-center">
+        <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-full bg-brand/10 text-brand">
+          <Store className="h-8 w-8" />
+        </div>
+        <h1 className="text-xl font-bold text-foreground">Vendé en MercadoCercano</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Ingresá o creá tu cuenta para publicar productos.
+        </p>
+        <Button asChild className="mt-6 bg-brand text-brand-foreground hover:bg-brand/90">
+          <Link to="/auth" search={{ next: "/vender" }}>
+            <LogIn className="mr-2 h-4 w-4" />
+            Ingresar
+          </Link>
+        </Button>
+      </main>
+    );
+  }
+
+  const submit = async () => {
     if (!valid) {
       toast.error("Completá todos los campos correctamente");
       return;
     }
-    addProduct({
-      title: title.trim(),
-      price: priceNum,
-      stock: stockNum,
-      description: description.trim(),
-      image:
-        image.trim() ||
-        "https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?w=600&auto=format&fit=crop",
-      city,
-      category,
-      shipping,
-    });
-    toast.success("Producto publicado", { description: title });
-    setTitle("");
-    setPrice("");
-    setStock("1");
-    setDescription("");
-    setImage("");
+    try {
+      await createProduct.mutateAsync({
+        title: title.trim(),
+        price: priceNum,
+        stock: stockNum,
+        description: description.trim(),
+        image_url:
+          image.trim() ||
+          "https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?w=600&auto=format&fit=crop",
+        city,
+        category,
+        shipping,
+      });
+      toast.success("Producto publicado", { description: title });
+      setTitle("");
+      setPrice("");
+      setStock("1");
+      setDescription("");
+      setImage("");
+    } catch (e) {
+      toast.error("No pudimos publicar", {
+        description: e instanceof Error ? e.message : String(e),
+      });
+    }
   };
-
-  const myProducts = products.filter((p) => p.seller === "Tu tienda");
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6">
@@ -160,7 +202,10 @@ function SellerPage() {
               </Select>
             </Field>
             <Field label="Método de entrega">
-              <Select value={shipping} onValueChange={(v) => setShipping(v as typeof shipping)}>
+              <Select
+                value={shipping}
+                onValueChange={(v) => setShipping(v as typeof shipping)}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -184,10 +229,10 @@ function SellerPage() {
 
           <Button
             onClick={submit}
-            disabled={!valid}
+            disabled={!valid || createProduct.isPending}
             className="w-full bg-brand text-brand-foreground hover:bg-brand/90 sm:w-auto"
           >
-            Publicar producto
+            {createProduct.isPending ? "Publicando…" : "Publicar producto"}
           </Button>
         </div>
 
@@ -228,12 +273,16 @@ function SellerPage() {
               </p>
             ) : (
               <ul className="mt-3 space-y-2">
-                {myProducts.map((p) => (
+                {myProducts.map((p: Product) => (
                   <li
                     key={p.id}
                     className="flex items-center gap-3 rounded-lg border border-border p-2"
                   >
-                    <img src={p.image} alt="" className="h-10 w-10 rounded object-cover" />
+                    <img
+                      src={p.image_url}
+                      alt=""
+                      className="h-10 w-10 rounded object-cover"
+                    />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{p.title}</p>
                       <p className="text-xs text-muted-foreground">
