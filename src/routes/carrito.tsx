@@ -1,11 +1,18 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { Minus, Plus, Trash2, Truck, MapPin, ShoppingBag } from "lucide-react";
+import { Minus, Plus, Trash2, Truck, MapPin, ShoppingBag, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-import { formatARS, useMarketplace } from "@/lib/marketplace-store";
+import {
+  formatARS,
+  useCart,
+  useProducts,
+  useCreateOrder,
+  type Product,
+} from "@/lib/marketplace-store";
+import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/carrito")({
@@ -19,7 +26,11 @@ export const Route = createFileRoute("/carrito")({
 });
 
 function CartPage() {
-  const { products, cart, updateQty, removeFromCart, clearCart } = useMarketplace();
+  const { cart, updateQty, removeFromCart, clearCart } = useCart();
+  const { data: products = [] } = useProducts();
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const createOrder = useCreateOrder();
   const [zip, setZip] = useState("");
   const [method, setMethod] = useState<"envio" | "retiro">("envio");
 
@@ -27,10 +38,10 @@ function CartPage() {
     () =>
       cart
         .map((i) => {
-          const p = products.find((x) => x.id === i.productId);
+          const p = products.find((x: Product) => x.id === i.productId);
           return p ? { ...i, product: p } : null;
         })
-        .filter(Boolean) as { productId: string; qty: number; product: (typeof products)[0] }[],
+        .filter(Boolean) as { productId: string; qty: number; product: Product }[],
     [cart, products],
   );
 
@@ -55,6 +66,39 @@ function CartPage() {
     );
   }
 
+  const checkout = async () => {
+    if (!user) {
+      toast.info("Ingresá para finalizar la compra");
+      navigate({ to: "/auth", search: { next: "/carrito" } });
+      return;
+    }
+    try {
+      await createOrder.mutateAsync({
+        items: items.map(({ product, qty }) => ({
+          product_id: product.id,
+          title: product.title,
+          price: product.price,
+          qty,
+          image_url: product.image_url,
+        })),
+        subtotal,
+        shipping_cost: shipping ?? 0,
+        total,
+        shipping_method: method,
+        shipping_zip: method === "envio" ? zip || null : null,
+      });
+      toast.success("Compra registrada", {
+        description: `Total ${formatARS(total)}. Guardamos tu orden.`,
+      });
+      clearCart();
+      navigate({ to: "/" });
+    } catch (e) {
+      toast.error("No pudimos registrar la orden", {
+        description: e instanceof Error ? e.message : String(e),
+      });
+    }
+  };
+
   return (
     <main className="mx-auto max-w-7xl px-4 py-6">
       <h1 className="mb-4 text-2xl font-bold text-foreground">Tu carrito</h1>
@@ -66,7 +110,7 @@ function CartPage() {
               className="grid grid-cols-[80px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-border bg-card p-3 sm:grid-cols-[96px_minmax(0,1fr)_auto_auto]"
             >
               <img
-                src={product.image}
+                src={product.image_url}
                 alt={product.title}
                 className="h-20 w-20 rounded-lg object-cover sm:h-24 sm:w-24"
               />
@@ -75,7 +119,7 @@ function CartPage() {
                   {product.title}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {product.seller} · {product.city}
+                  {product.seller_name} · {product.city}
                 </p>
                 <p className="mt-1 text-base font-bold text-foreground">
                   {formatARS(product.price)}
@@ -110,12 +154,7 @@ function CartPage() {
               </Button>
             </div>
           ))}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={clearCart}
-            className="text-muted-foreground"
-          >
+          <Button variant="ghost" size="sm" onClick={clearCart} className="text-muted-foreground">
             Vaciar carrito
           </Button>
         </div>
@@ -188,14 +227,19 @@ function CartPage() {
           </div>
           <Button
             className="w-full bg-brand text-brand-foreground hover:bg-brand/90"
-            onClick={() => {
-              toast.success("Compra simulada", {
-                description: `Total ${formatARS(total)}. Recibirás un correo de confirmación.`,
-              });
-              clearCart();
-            }}
+            onClick={checkout}
+            disabled={createOrder.isPending}
           >
-            Finalizar compra
+            {!user ? (
+              <>
+                <LogIn className="mr-2 h-4 w-4" />
+                Ingresá para finalizar
+              </>
+            ) : createOrder.isPending ? (
+              "Procesando…"
+            ) : (
+              "Finalizar compra"
+            )}
           </Button>
         </aside>
       </div>
@@ -218,6 +262,6 @@ function estimateShipping(zip: string, subtotal: number) {
   if (subtotal >= 250000) return 0;
   const n = parseInt(zip, 10) || 0;
   const base = 2500;
-  const distance = Math.abs(1400 - n) / 100; // rough
+  const distance = Math.abs(1400 - n) / 100;
   return Math.round(base + distance * 120);
 }
