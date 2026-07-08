@@ -12,13 +12,18 @@ type AuthCtx = {
   signOut: () => Promise<void>;
 };
 
+const LOCAL_USER: LocalUser = {
+  id: "local-user",
+  email: "demo@a-la-vuelta.local",
+};
+
 const AuthContext = createContext<AuthCtx | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider
       value={{
-        user: null,
+        user: LOCAL_USER,
         session: null,
         loading: false,
         signOut: async () => {},
