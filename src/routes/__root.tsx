@@ -48,9 +48,7 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          Esta página no cargó
-        </h1>
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">Esta página no cargó</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Algo salió mal. Podés reintentar o volver al inicio.
         </p>
@@ -81,17 +79,16 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "MercadoCercano — Marketplace local argentino" },
+      { title: "A la Vuelta — Marketplace local" },
       {
         name: "description",
         content:
-          "Comprá y vendé cerca tuyo en Argentina. Envío local o retiro en persona, vendedores con reputación y precios en pesos.",
+          "Encontrá comercios y productos cerca de casa en San Carlos, Eugenio Bustos, La Consulta y Valle de Uco.",
       },
-      { property: "og:title", content: "MercadoCercano — Marketplace local argentino" },
+      { property: "og:title", content: "A la Vuelta — Marketplace local" },
       {
         property: "og:description",
-        content:
-          "Comprá y vendé cerca tuyo. Envío local o retiro en persona, precios en pesos argentinos.",
+        content: "Catálogo local para comprar, reservar y descubrir comercios cercanos.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
