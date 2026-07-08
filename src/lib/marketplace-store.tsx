@@ -145,18 +145,25 @@ export function useProducts() {
     queryFn: async (): Promise<Product[]> => {
       const { data, error } = await supabase
         .from("products")
-        .select("*, profiles:profiles!products_user_id_fkey(display_name)")
+        .select("*")
         .order("created_at", { ascending: false });
-      if (error) {
-        // Fallback without join in case FK name isn't recognized
-        const { data: d2, error: e2 } = await supabase
-          .from("products")
-          .select("*")
-          .order("created_at", { ascending: false });
-        if (e2) throw e2;
-        return (d2 as RawProduct[]).map(mapProduct);
+      if (error) throw error;
+      const products = (data ?? []) as RawProduct[];
+      const userIds = Array.from(new Set(products.map((p) => p.user_id)));
+      const nameByUser = new Map<string, string>();
+      if (userIds.length) {
+        const { data: profs } = await supabase
+          .from("profiles")
+          .select("id, display_name")
+          .in("id", userIds);
+        (profs ?? []).forEach((p) => {
+          if (p.display_name) nameByUser.set(p.id, p.display_name);
+        });
       }
-      return (data as RawProduct[]).map(mapProduct);
+      return products.map((p) => ({
+        ...mapProduct(p),
+        seller_name: nameByUser.get(p.user_id) ?? "Vendedor",
+      }));
     },
   });
 }
