@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>A la Vuelta · Marketplace local</title>
+  <style>
+    :root{--bg:#fff7ed;--ink:#1f2937;--muted:#6b7280;--brand:#ea580c;--card:#fff;--line:#fed7aa;--soft:#ffedd5}
+    *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:linear-gradient(180deg,var(--bg),#fff);color:var(--ink)}
+    header{padding:36px 18px 28px;background:linear-gradient(135deg,#7c2d12,#ea580c);color:white} .wrap{max-width:1120px;margin:auto}
+    h1{font-size:clamp(34px,6vw,70px);line-height:1;margin:0 0 12px;font-weight:900} .lead{max-width:720px;font-size:18px;opacity:.95;margin:0}
+    .bar{display:grid;grid-template-columns:1fr 220px 220px;gap:12px;margin-top:24px}.bar input,.bar select{width:100%;padding:14px 15px;border:1px solid var(--line);border-radius:14px;font-size:15px;background:#fff;color:var(--ink)}
+    main{padding:24px 18px 50px}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}.stat{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;box-shadow:0 10px 30px #0000000c}.stat b{font-size:28px;color:var(--brand);display:block}.stat span{color:var(--muted);font-size:13px}
+    .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:16px;box-shadow:0 10px 30px #0000000c}.tag{display:inline-flex;background:var(--soft);color:#9a3412;border-radius:999px;padding:5px 9px;font-size:12px;font-weight:700;margin-bottom:10px}.card h3{margin:0 0 7px;font-size:18px}.meta{color:var(--muted);font-size:14px;margin:5px 0}.addr{font-size:14px;color:#374151;min-height:38px}.actions{display:flex;gap:8px;margin-top:13px}.btn{border:0;border-radius:12px;padding:10px 12px;font-weight:800;cursor:pointer}.primary{background:var(--brand);color:#fff}.secondary{background:#fff7ed;color:#9a3412;border:1px solid var(--line)}
+    .note{background:#fffbeb;border:1px solid #fde68a;border-radius:16px;padding:14px;margin-bottom:18px;color:#713f12}.empty{display:none;text-align:center;padding:40px;color:var(--muted)}footer{padding:30px 18px;color:var(--muted);text-align:center;border-top:1px solid var(--line)}
+    @media(max-width:850px){.bar{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<header><div class="wrap">
+  <div style="font-weight:900;letter-spacing:.16em;text-transform:uppercase;opacity:.85">Marketplace local</div>
+  <h1>A la Vuelta</h1>
+  <p class="lead">Encontrá comercios y productos cerca de casa. MVP local para San Carlos, Eugenio Bustos, La Consulta y zonas cercanas.</p>
+  <div class="bar"><input id="q" placeholder="Buscar comercio, rubro o localidad…"><select id="city"></select><select id="cat"></select></div>
+</div></header>
+<main><div class="wrap">
+  <div class="stats"><div class="stat"><b id="total">0</b><span>comercios cargados</span></div><div class="stat"><b id="shown">0</b><span>resultados visibles</span></div><div class="stat"><b id="cities">0</b><span>localidades</span></div><div class="stat"><b id="saved">0</b><span>guardados</span></div></div>
+  <div class="note">Los contactos públicos no se muestran automáticamente. El WhatsApp se agrega solo cuando cada comercio lo autorice.</div>
+  <section id="grid" class="grid"></section><div id="empty" class="empty">No encontramos resultados con esos filtros.</div>
+</div></main>
+<footer>Proyecto A la Vuelta · base local inicial · Mercado Cercano</footer>
+<script>
+const RAW=`Calzados Sucre|Moda, calzado y accesorios|Eugenio Bustos|San Martín 241|Indumentaria
+Max Limpio|Limpieza|Eugenio Bustos|San Juan Bosco 417|Productos de limpieza
+Los Amiguitos|Alimentos y bebidas|San Carlos|Lencinas 370|Carnicería
+Bailo Sport|Moda, calzado y accesorios|Eugenio Bustos|San Martín 1329|Indumentaria deportiva
+Trozadero Don Andres|Alimentos y bebidas|Eugenio Bustos|Dirección a confirmar|Carnicería
+Fiambreria Don Juan|Alimentos y bebidas|La Consulta|Barrio Juventud Sancarlina|Despensa
+Fiambreria Bastias|Alimentos y bebidas|Eugenio Bustos|A. Bonfanti 273|Despensa
+Sg Tu Look|Moda, calzado y accesorios|Eugenio Bustos|El Rosedal S/N|Indumentaria
+Don David|Alimentos y bebidas|Pareditas|Santiago Mendez 735|Despensa
+Carniceria y Avicola Mi Viejo|Alimentos y bebidas|San Carlos|Maestri y Lavalle 88|Carnicería
+Despensa Naty|Alimentos y bebidas|Chilecito|Ruta Nacional 40|Carnicería
+Singular|Moda, calzado y accesorios|Eugenio Bustos|Sargento Cabral|Indumentaria
+Impulso Indumentaria|Moda, calzado y accesorios|San Carlos|Bernardo Quiroga 293|Indumentaria deportiva
+Martinez Repuestos|Autos, motos y repuestos|Eugenio Bustos|Dirección a confirmar|Repuestos
+Kamina|Moda, calzado y accesorios|Eugenio Bustos|Arenales 361|Indumentaria
+Carnes Don Paco|Alimentos y bebidas|San Carlos|Bernardo Quiroga 99|Carnicería
+Locos Por El Deporte|Moda, calzado y accesorios|La Consulta|Enrique Ramonda|Accesorios
+Flor de Lis|Juguetería|San Carlos|San Martín|Juguetería
+Mercado Independencia|Alimentos y bebidas|San Carlos|Sargento Cabral e Independencia|Supermercado
+Suyana Modas|Moda, calzado y accesorios|Eugenio Bustos|Arenales 361|Indumentaria
+Panificadora Don Juan|Alimentos y bebidas|Eugenio Bustos|Las Heras 493|Panadería
+Tienda Janet|Moda, calzado y accesorios|Eugenio Bustos|Gral. San Martín 201|Indumentaria
+Mayorista Fenix|Alimentos y bebidas|Eugenio Bustos|San Martín 151|Supermercado
+Numen|Tecnología y electrónica|Eugenio Bustos|Las Heras 350|Electrónica
+El Cumpa|Alimentos y bebidas|Tres Esquinas|Arriagada|Carnicería
+Emunah|Moda, calzado y accesorios|Eugenio Bustos|Barrio Huayquerias|Indumentaria
+Agua|Moda, calzado y accesorios|Eugenio Bustos|Guillermo Cano 326|Indumentaria
+Almasofia|Moda, calzado y accesorios|Eugenio Bustos|Sin número|Indumentaria
+La Estancia|Alimentos y bebidas|Tres Esquinas|Puerta|Despensa
+La Rural|Alimentos y bebidas|La Consulta|Barrio|Carnicería
+Carniceria y Verduleria El Gato|Alimentos y bebidas|San Carlos|Maestri 272|Carnicería
+Corralon Al Fondo|Alimentos y bebidas|San Carlos|San Martín 15|Despensa
+Fina|Moda, calzado y accesorios|Eugenio Bustos|San Juan Bosco 321|Indumentaria
+Mercado San Expedito|Alimentos y bebidas|Chilecito|Daniel Guevara|Supermercado
+Electro Cell|Tecnología y electrónica|San Carlos|Barrio|Telefonía
+Panaderia Nueva Esperanza|Alimentos y bebidas|San Carlos|Casa 1|Panadería
+Blanco Arte|Moda, calzado y accesorios|Eugenio Bustos|Arenales 371|Indumentaria
+Mc Umy Resto|Gastronomía|La Consulta|Bianchetti 240|Comida rápida
+Celestina|Alimentos y bebidas|Eugenio Bustos|Zona Industrial Ruta 40|Chocolatería
+El Nogal|Alimentos y bebidas|San Carlos|Calle sin nombre|Carnicería
+Carniceria Eugenio Bustos|Alimentos y bebidas|Eugenio Bustos|Barrio|Carnicería
+La Plaza|Alimentos y bebidas|Chilecito|Bernardo Quiroga|Despensa
+Las Marias|Hogar, ferretería y jardín|San Carlos|Ruta 40|Ferretería
+Frigorifico San Carlos|Alimentos y bebidas|San Carlos|Emilio Civit Norte 2616|Carnicería
+Lagrafica|Librería, papelería e imprenta|Eugenio Bustos|Chile 130|Imprenta
+Oreo Libreria|Librería, papelería e imprenta|San Carlos|Bernardo Quiroga 675|Librería
+Delirio|Moda, calzado y accesorios|San Carlos|Los Olivos y Calderon 397|Indumentaria
+Pintureria y Ferreteria Arcoiris|Hogar, ferretería y jardín|Eugenio Bustos|San Martín y Belgrano|Ferretería
+She Indumentaria|Moda, calzado y accesorios|La Consulta|Juan Jose Paso 394|Indumentaria
+Despensa Doña Rita|Alimentos y bebidas|San Carlos|Calderon 326|Supermercado
+Pulchino la Boutique del Niño|Moda, calzado y accesorios|San Carlos|San Martín 517|Indumentaria
+Gomeria Neumatica Adarme|Autos, motos y repuestos|Eugenio Bustos|San Martín 860|Gomería
+Ohjack|Gastronomía|Eugenio Bustos|San Martín 643|Bar
+Ferreteria Poletto|Hogar, ferretería y jardín|San Carlos|Bernardo Quiroga 1085|Ferretería
+El Entrerriano|Gastronomía|Eugenio Bustos|Sin nombre|Comida rápida
+Petshoptitan|Mascotas|Eugenio Bustos|San Martín y Bonfanti|Mascotas
+Parientes Pizzeria|Gastronomía|San Carlos|J.N. Lencinas 349|Pizzería
+Que Lo Disfrutes|Gastronomía|Tunuyán|San Martín 1021|Bar
+La Villa|Alimentos y bebidas|San Carlos|Sargento Cabral 496|Carnicería
+Josue Lucero|Alimentos y bebidas|San Carlos|Ejército de los Andes 68|Panadería
+Algramo|Alimentos y bebidas|Eugenio Bustos|San Martín y Chile 5569|Despensa
+Sublime|Moda, calzado y accesorios|San Carlos|Maestri y Lavalle|Indumentaria
+Cielito Kids|Moda, calzado y accesorios|San Carlos|Ruta 40|Indumentaria`;
+const data=RAW.trim().split('\n').map((r,i)=>{const [name,cat,city,addr,sub]=r.split('|');return {id:i+1,name,cat,city,addr,sub}});
+const saved=new Set(JSON.parse(localStorage.getItem('savedStores')||'[]'));
+const $=id=>document.getElementById(id);
+function opt(el,items,all){el.innerHTML=`<option value="">${all}</option>`+items.map(x=>`<option>${x}</option>`).join('')}
+opt($('city'),[...new Set(data.map(x=>x.city))].sort(),'Todas las localidades');opt($('cat'),[...new Set(data.map(x=>x.cat))].sort(),'Todos los rubros');
+$('total').textContent=data.length;$('cities').textContent=new Set(data.map(x=>x.city)).size;function save(id){saved.has(id)?saved.delete(id):saved.add(id);localStorage.setItem('savedStores',JSON.stringify([...saved]));render()}
+function render(){const q=$('q').value.toLowerCase(), city=$('city').value, cat=$('cat').value;const list=data.filter(x=>(!city||x.city===city)&&(!cat||x.cat===cat)&&(`${x.name} ${x.cat} ${x.city} ${x.addr} ${x.sub}`.toLowerCase().includes(q)));$('shown').textContent=list.length;$('saved').textContent=saved.size;$('empty').style.display=list.length?'none':'block';$('grid').innerHTML=list.map(x=>`<article class="card"><span class="tag">${x.cat}</span><h3>${x.name}</h3><p class="meta">📍 ${x.city}</p><p class="addr">${x.addr}</p><p class="meta">${x.sub}</p><div class="actions"><button class="btn primary" onclick="save(${x.id})">${saved.has(x.id)?'Guardado ✓':'Guardar'}</button><button class="btn secondary" onclick="alert('Contacto pendiente de autorización del comercio.')">Consultar</button></div></article>`).join('')}
+['q','city','cat'].forEach(id=>$(id).addEventListener('input',render));render();
+</script>
+</body>
+</html>
