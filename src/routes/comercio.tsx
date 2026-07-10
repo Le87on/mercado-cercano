@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { CalendarDays, Eye, PackagePlus, Store, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { formatARS, useCreateProduct, useMyProducts } from "@/lib/marketplace-store";
@@ -36,7 +36,7 @@ function BusinessPanelPage() {
     [filter, orders],
   );
 
-  const submitProduct = async (event: React.FormEvent<HTMLFormElement>) => {
+  const submitProduct = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const input = {
@@ -47,7 +47,9 @@ function BusinessPanelPage() {
       city: business?.city ?? "San Carlos",
       category: String(form.get("category") ?? business?.category ?? "General"),
       shipping: "ambos" as const,
-      image_url: String(form.get("image_url") ?? "") || "https://images.unsplash.com/photo-1607082349566-187342175e2f?w=900&auto=format&fit=crop",
+      image_url:
+        String(form.get("image_url") ?? "") ||
+        "https://images.unsplash.com/photo-1607082349566-187342175e2f?w=900&auto=format&fit=crop",
     };
     const errors = validateProductInput(input);
     if (errors.length) {
