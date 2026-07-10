@@ -1,5 +1,11 @@
+# Environment
+.env
+.env.*
+!.env.example
+.dev.vars
+
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -7,24 +13,42 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-.output
-.vinxi
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+dist-ssr/
+.output/
+.out/
+.cache/
+.tmp/
+tmp/
+coverage/
+
+# Vite / React / TypeScript / TanStack
+.vite/
+.vinxi/
 .tanstack/**
-.nitro
+.nitro/
+*.tsbuildinfo
 *.local
+
+# Supabase local
+.supabase/
+**/.branches/
+**/.temp/
 
 # Wrangler / Cloudflare
 .wrangler/
-.dev.vars
 
-# Editor directories and files
+# Editor directories and OS files
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
+Thumbs.db
 *.suo
 *.ntvs*
 *.njsproj
