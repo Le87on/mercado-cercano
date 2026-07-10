@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { LogOut, MailCheck, ShieldCheck, Store, UserRound } from "lucide-react";
+import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useMarketplaceProfile, useUpdateMarketplaceProfile } from "@/lib/marketplace-extended";
@@ -90,7 +91,7 @@ function ProfilePage() {
   );
 }
 
-function ActionCard({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) {
+function ActionCard({ icon, title, text }: { icon: ReactNode; title: string; text: string }) {
   return (
     <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
       <div className="flex items-center gap-2 font-bold text-foreground">{icon}{title}</div>
