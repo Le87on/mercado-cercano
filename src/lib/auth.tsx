@@ -1,37 +1,156 @@
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import type { Session, User } from "@supabase/supabase-js";
 
-type LocalUser = {
+import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+
+type DemoUser = {
   id: string;
-  email: string;
+  email?: string;
+  user_metadata?: Record<string, unknown>;
+};
+
+export type AuthUser = User | DemoUser;
+
+export type Profile = {
+  id: string;
+  full_name: string | null;
+  phone: string | null;
+  avatar_url: string | null;
+  role: "customer" | "business_owner" | "admin";
+  email_verified: boolean;
 };
 
 type AuthCtx = {
-  user: LocalUser | null;
-  session: null;
+  user: AuthUser | null;
+  session: Session | null;
+  profile: Profile | null;
   loading: boolean;
+  isDemoMode: boolean;
+  signIn: (email: string, password: string) => Promise<{ error?: string }>;
+  signUp: (email: string, password: string, fullName?: string) => Promise<{ error?: string }>;
+  resetPassword: (email: string) => Promise<{ error?: string }>;
+  updateProfile: (values: Partial<Pick<Profile, "full_name" | "phone" | "avatar_url">>) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
 };
 
-const LOCAL_USER: LocalUser = {
+const LOCAL_USER: DemoUser = {
   id: "local-user",
   email: "demo@a-la-vuelta.local",
+  user_metadata: { full_name: "Usuario demo" },
 };
 
 const AuthContext = createContext<AuthCtx | null>(null);
 
+async function loadProfile(userId: string): Promise<Profile | null> {
+  if (!supabase) return null;
+
+  const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
+  if (error) throw error;
+  return data as Profile | null;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  return (
-    <AuthContext.Provider
-      value={{
-        user: LOCAL_USER,
-        session: null,
-        loading: false,
-        signOut: async () => {},
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(isSupabaseConfigured ? null : LOCAL_USER);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [loading, setLoading] = useState(isSupabaseConfigured);
+
+  useEffect(() => {
+    if (!supabase) {
+      setLoading(false);
+      return;
+    }
+
+    let mounted = true;
+
+    supabase.auth.getSession().then(async ({ data, error }) => {
+      if (!mounted) return;
+      if (error) console.error(error);
+      const nextSession = data.session;
+      setSession(nextSession);
+      setUser(nextSession?.user ?? null);
+      if (nextSession?.user) {
+        try {
+          setProfile(await loadProfile(nextSession.user.id));
+        } catch (profileError) {
+          console.error(profileError);
+        }
+      }
+      setLoading(false);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setUser(nextSession?.user ?? null);
+      if (!nextSession?.user) {
+        setProfile(null);
+        return;
+      }
+      queueMicrotask(async () => {
+        try {
+          setProfile(await loadProfile(nextSession.user.id));
+        } catch (profileError) {
+          console.error(profileError);
+        }
+      });
+    });
+
+    return () => {
+      mounted = false;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
+  const value = useMemo<AuthCtx>(
+    () => ({
+      user,
+      session,
+      profile,
+      loading,
+      isDemoMode: !isSupabaseConfigured,
+      async signIn(email, password) {
+        if (!supabase) return { error: "Supabase no está configurado." };
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        return error ? { error: error.message } : {};
+      },
+      async signUp(email, password, fullName) {
+        if (!supabase) return { error: "Supabase no está configurado." };
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { full_name: fullName } },
+        });
+        return error ? { error: error.message } : {};
+      },
+      async resetPassword(email) {
+        if (!supabase) return { error: "Supabase no está configurado." };
+        const redirectTo = `${window.location.origin}/perfil`;
+        const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+        return error ? { error: error.message } : {};
+      },
+      async updateProfile(values) {
+        if (!supabase || !user) return { error: "No hay sesión activa." };
+        const { error } = await supabase.from("profiles").update(values).eq("id", user.id);
+        if (error) return { error: error.message };
+        try {
+          setProfile(await loadProfile(user.id));
+        } catch (profileError) {
+          return { error: profileError instanceof Error ? profileError.message : "No se pudo actualizar el perfil." };
+        }
+        return {};
+      },
+      async signOut() {
+        if (!supabase) return;
+        await supabase.auth.signOut();
+        setSession(null);
+        setUser(null);
+        setProfile(null);
+      },
+    }),
+    [loading, profile, session, user],
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
