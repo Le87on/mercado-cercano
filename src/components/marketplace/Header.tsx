@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { ShoppingCart, Store, Home } from "lucide-react";
+import { ClipboardList, Home, ShieldCheck, ShoppingCart, Store, UserRound } from "lucide-react";
 import { useCart } from "@/lib/marketplace-store";
 import { cn } from "@/lib/utils";
 
@@ -27,7 +27,7 @@ export function Header() {
       )}
     >
       <Icon className="h-4 w-4" />
-      <span className="hidden sm:inline">{label}</span>
+      <span className="hidden lg:inline">{label}</span>
     </Link>
   );
 
@@ -45,9 +45,12 @@ export function Header() {
             </div>
           </div>
         </Link>
-        <nav className="flex items-center gap-1">
+        <nav className="flex items-center gap-1 overflow-x-auto">
           <NavLink to="/" icon={Home} label="Comprar" />
-          <NavLink to="/vender" icon={Store} label="Vender" />
+          <NavLink to="/pedidos" icon={ClipboardList} label="Pedidos" />
+          <NavLink to="/comercio" icon={Store} label="Comercio" />
+          <NavLink to="/admin" icon={ShieldCheck} label="Admin" />
+          <NavLink to="/perfil" icon={UserRound} label="Perfil" />
           <Link
             to="/carrito"
             className={cn(
@@ -58,7 +61,7 @@ export function Header() {
             )}
           >
             <ShoppingCart className="h-4 w-4" />
-            <span className="hidden sm:inline">Guardados</span>
+            <span className="hidden lg:inline">Guardados</span>
             {count > 0 && (
               <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-brand px-1 text-[11px] font-bold text-brand-foreground">
                 {count}
