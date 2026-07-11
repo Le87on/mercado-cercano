@@ -303,14 +303,25 @@ export function useCreateOrder() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: {
+      business_id: string;
+      business_name: string;
       items: OrderItemSnapshot[];
       subtotal: number;
       shipping_cost: number;
       total: number;
       shipping_method: "envio" | "retiro";
       shipping_zip: string | null;
+      delivery_address?: string;
+      notes?: string;
     }) => {
-      const order = { id: `order-${Date.now().toString(36)}`, created_at: new Date().toISOString(), ...input };
+      const order = {
+        id: `order-${Date.now().toString(36)}`,
+        user_id: "local-user",
+        status: "submitted",
+        token: `QR-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
+        created_at: new Date().toISOString(),
+        ...input,
+      };
       writeJson(LS_ORDERS, [order, ...readJson<object[]>(LS_ORDERS, [])]);
       return order;
     },
