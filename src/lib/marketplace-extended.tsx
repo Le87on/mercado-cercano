@@ -112,7 +112,7 @@ export function useMarketplaceProfile() {
         email: "demo@a-la-vuelta.local",
         phone: "+549",
         avatar_url: "",
-        role: "admin" as UserRole,
+        role: "customer" as UserRole,
       }),
   });
 }
@@ -122,7 +122,7 @@ export function useUpdateMarketplaceProfile() {
   return useMutation({
     mutationFn: async (input: Record<string, string>) => {
       const current = readJson<Record<string, string>>(LS_PROFILE, {});
-      const next = { ...current, ...input };
+      const next = { ...current, ...input, role: current.role ?? "customer" };
       writeJson(LS_PROFILE, next);
       return next;
     },
