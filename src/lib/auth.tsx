@@ -26,6 +26,7 @@ type AuthCtx = {
   profile: Profile | null;
   loading: boolean;
   isDemoMode: boolean;
+  configurationError: string | null;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signUp: (email: string, password: string, fullName?: string) => Promise<{ error?: string }>;
   resetPassword: (email: string) => Promise<{ error?: string }>;
@@ -33,10 +34,24 @@ type AuthCtx = {
   signOut: () => Promise<void>;
 };
 
+const demoAuthEnabled = !isSupabaseConfigured && import.meta.env.DEV;
+const configurationError = !isSupabaseConfigured && !import.meta.env.DEV
+  ? "Supabase no está configurado para producción. Completá VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY antes de publicar."
+  : null;
+
 const LOCAL_USER: DemoUser = {
   id: "local-user",
   email: "demo@a-la-vuelta.local",
-  user_metadata: { full_name: "Usuario demo" },
+  user_metadata: { full_name: "Usuario demo", role: "customer" },
+};
+
+const LOCAL_PROFILE: Profile = {
+  id: "local-user",
+  full_name: "Usuario demo",
+  phone: "+549",
+  avatar_url: null,
+  role: "customer",
+  email_verified: false,
 };
 
 const AuthContext = createContext<AuthCtx | null>(null);
@@ -51,8 +66,8 @@ async function loadProfile(userId: string): Promise<Profile | null> {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
-  const [user, setUser] = useState<AuthUser | null>(isSupabaseConfigured ? null : LOCAL_USER);
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(demoAuthEnabled ? LOCAL_USER : null);
+  const [profile, setProfile] = useState<Profile | null>(demoAuthEnabled ? LOCAL_PROFILE : null);
   const [loading, setLoading] = useState(isSupabaseConfigured);
 
   useEffect(() => {
@@ -107,14 +122,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       session,
       profile,
       loading,
-      isDemoMode: !isSupabaseConfigured,
+      isDemoMode: demoAuthEnabled,
+      configurationError,
       async signIn(email, password) {
-        if (!supabase) return { error: "Supabase no está configurado." };
+        if (!supabase) return { error: configurationError ?? "Supabase no está configurado." };
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         return error ? { error: error.message } : {};
       },
       async signUp(email, password, fullName) {
-        if (!supabase) return { error: "Supabase no está configurado." };
+        if (!supabase) return { error: configurationError ?? "Supabase no está configurado." };
         const { error } = await supabase.auth.signUp({
           email,
           password,
@@ -123,12 +139,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return error ? { error: error.message } : {};
       },
       async resetPassword(email) {
-        if (!supabase) return { error: "Supabase no está configurado." };
+        if (!supabase) return { error: configurationError ?? "Supabase no está configurado." };
         const redirectTo = `${window.location.origin}/perfil`;
         const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
         return error ? { error: error.message } : {};
       },
       async updateProfile(values) {
+        if (demoAuthEnabled) {
+          setProfile((current) => ({ ...(current ?? LOCAL_PROFILE), ...values }));
+          return {};
+        }
         if (!supabase || !user) return { error: "No hay sesión activa." };
         const { error } = await supabase.from("profiles").update(values).eq("id", user.id);
         if (error) return { error: error.message };
@@ -140,7 +160,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return {};
       },
       async signOut() {
-        if (!supabase) return;
+        if (!supabase) {
+          setSession(null);
+          setUser(null);
+          setProfile(null);
+          return;
+        }
         await supabase.auth.signOut();
         setSession(null);
         setUser(null);
