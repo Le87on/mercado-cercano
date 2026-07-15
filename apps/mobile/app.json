@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "A la Vuelta",
+    "slug": "a-la-vuelta",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "alavuelta",
+    "userInterfaceStyle": "automatic",
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.alavuelta.mobile"
+    },
+    "android": {
+      "package": "com.alavuelta.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#081A2E"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "local-dev"
+      }
+    }
+  }
+}
