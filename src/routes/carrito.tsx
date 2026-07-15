@@ -7,12 +7,14 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { formatARS, useCart, useProducts, useCreateOrder, type Product } from "@/lib/marketplace-store";
 import { toast } from "sonner";
+import { Textarea } from "@/components/ui/textarea";
+import { calculateOrderTotals } from "@/lib/marketplace-rules";
 
 export const Route = createFileRoute("/carrito")({
   head: () => ({
     meta: [
-      { title: "Guardados — A la Vuelta" },
-      { name: "description", content: "Revisá comercios guardados y prepará tu consulta local." },
+      { title: "Checkout — A la Vuelta" },
+      { name: "description", content: "Confirmá tu pedido o consulta en comercios locales." },
     ],
   }),
   component: CartPage,
@@ -25,6 +27,8 @@ function CartPage() {
   const createOrder = useCreateOrder();
   const [zip, setZip] = useState("");
   const [method, setMethod] = useState<"envio" | "retiro">("retiro");
+  const [address, setAddress] = useState("");
+  const [notes, setNotes] = useState("");
 
   const items = useMemo(
     () =>
@@ -37,8 +41,15 @@ function CartPage() {
     [cart, products],
   );
 
-  const subtotal = items.reduce((a, i) => a + i.product.price * i.qty, 0);
-  const shipping = method === "retiro" ? 0 : zip ? estimateShipping(zip, subtotal) : null;
+  const totals = items.length
+    ? calculateOrderTotals(
+        items.map(({ product, qty }) => ({ price: product.price, qty, stock: product.stock })),
+        method,
+        items[0]?.product.city,
+      )
+    : { subtotal: 0, shipping: 0, total: 0 };
+  const subtotal = totals.subtotal;
+  const shipping = method === "envio" && !zip ? null : totals.shipping;
   const total = subtotal + (shipping ?? 0);
   const onlyCatalog = items.every((i) => i.product.price === 0);
 
@@ -58,8 +69,18 @@ function CartPage() {
   }
 
   const checkout = async () => {
+    if (method === "envio" && (zip.length !== 4 || address.trim().length < 6)) {
+      toast.error("Completá los datos de entrega", {
+        description: "Ingresá un código postal de 4 dígitos y una dirección válida.",
+      });
+      return;
+    }
     try {
+      const sellerIds = new Set(items.map(({ product }) => product.user_id));
+      const sellerNames = new Set(items.map(({ product }) => product.seller_name).filter(Boolean));
       await createOrder.mutateAsync({
+        business_id: sellerIds.size === 1 ? [...sellerIds][0] : "multi-business",
+        business_name: sellerNames.size === 1 ? String([...sellerNames][0]) : "Varios comercios",
         items: items.map(({ product, qty }) => ({
           product_id: product.id,
           title: product.title,
@@ -72,12 +93,14 @@ function CartPage() {
         total,
         shipping_method: method,
         shipping_zip: method === "envio" ? zip || null : null,
+        delivery_address: method === "envio" ? address.trim() : undefined,
+        notes: notes.trim() || undefined,
       });
       toast.success(onlyCatalog ? "Consulta preparada" : "Pedido registrado", {
         description: onlyCatalog ? "Estos comercios quedaron guardados para contactar." : `Total ${formatARS(total)}.`,
       });
       clearCart();
-      navigate({ to: "/" });
+      navigate({ to: "/pedidos" });
     } catch (e) {
       toast.error("No pudimos registrar la consulta", {
         description: e instanceof Error ? e.message : String(e),
@@ -149,23 +172,48 @@ function CartPage() {
           </RadioGroup>
 
           {method === "envio" && (
-            <div>
-              <Label htmlFor="zip" className="text-xs font-medium">Código postal</Label>
-              <Input
-                id="zip"
-                value={zip}
-                onChange={(e) => setZip(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                placeholder="Ej: 5569"
-                className="mt-1"
-              />
+            <div className="space-y-3">
+              <div>
+                <Label htmlFor="zip" className="text-xs font-medium">Código postal</Label>
+                <Input
+                  id="zip"
+                  value={zip}
+                  onChange={(e) => setZip(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                  placeholder="Ej: 5569"
+                  inputMode="numeric"
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="address" className="text-xs font-medium">Dirección de entrega</Label>
+                <Input
+                  id="address"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="Calle, número y localidad"
+                  className="mt-1"
+                />
+              </div>
             </div>
           )}
+
+          <div>
+            <Label htmlFor="notes" className="text-xs font-medium">Nota para el comercio (opcional)</Label>
+            <Textarea
+              id="notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value.slice(0, 240))}
+              placeholder="Horario, referencia o aclaración"
+              className="mt-1 min-h-20"
+            />
+            <p className="mt-1 text-right text-[11px] text-muted-foreground">{notes.length}/240</p>
+          </div>
 
           <div className="space-y-2 border-t border-border pt-4 text-sm">
             <Row label="Subtotal" value={formatARS(subtotal)} />
             <Row
               label="Envío"
-              value={method === "retiro" ? "A coordinar" : shipping === null ? "Ingresá CP" : shipping === 0 ? "Gratis" : formatARS(shipping)}
+              value={method === "retiro" ? "Sin cargo" : shipping === null ? "Ingresá CP" : shipping === 0 ? "Gratis" : formatARS(shipping)}
               muted={shipping === null}
             />
             <div className="flex items-center justify-between border-t border-border pt-3 text-base font-bold">
@@ -174,7 +222,7 @@ function CartPage() {
             </div>
           </div>
           <Button className="w-full bg-brand text-brand-foreground hover:bg-brand/90" onClick={checkout} disabled={createOrder.isPending}>
-            {createOrder.isPending ? "Guardando…" : "Guardar consulta"}
+            {createOrder.isPending ? "Confirmando…" : onlyCatalog ? "Guardar consulta" : "Confirmar pedido"}
           </Button>
         </aside>
       </div>
@@ -189,12 +237,4 @@ function Row({ label, value, muted }: { label: string; value: string; muted?: bo
       <span className={muted ? "text-muted-foreground" : "font-medium text-foreground"}>{value}</span>
     </div>
   );
-}
-
-function estimateShipping(zip: string, subtotal: number) {
-  if (subtotal >= 250000) return 0;
-  const n = parseInt(zip, 10) || 0;
-  const base = 1500;
-  const distance = Math.abs(5569 - n) / 100;
-  return Math.round(base + distance * 120);
 }
