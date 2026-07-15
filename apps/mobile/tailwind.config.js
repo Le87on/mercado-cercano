@@ -5,21 +5,14 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        midnight: "#081A2E",
-        navy: "#0B2440",
-        cyanGlow: "#6FEFF2",
-        brand: "#19C7E6",
-        brandSoft: "#B7FBFF",
-        cardBlue: "#102E4F",
-        ink: "#EAF8FF",
-        mutedInk: "#96B6C8",
-        success: "#53D62C",
-        warning: "#FFF13F"
+        brand: "#10B981",
+        brandDark: "#047857",
+        brandSoft: "#D1FAE5",
       },
       boxShadow: {
-        glow: "0 0 24px rgba(111,239,242,0.35)"
-      }
-    }
+        glow: "0 10px 28px rgba(16,185,129,0.18)",
+      },
+    },
   },
-  plugins: []
+  plugins: [],
 };

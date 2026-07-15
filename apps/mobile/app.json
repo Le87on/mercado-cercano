@@ -6,7 +6,9 @@
     "orientation": "portrait",
     "scheme": "alavuelta",
     "userInterfaceStyle": "automatic",
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.alavuelta.mobile"
@@ -17,13 +19,13 @@
         "backgroundColor": "#081A2E"
       }
     },
-    "web": {
-      "bundler": "metro"
-    },
     "extra": {
       "eas": {
         "projectId": "local-dev"
       }
-    }
+    },
+    "plugins": [
+      "expo-font"
+    ]
   }
 }

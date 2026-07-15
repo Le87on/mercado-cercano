@@ -1,232 +1,617 @@
 import "./global.css";
 
-import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
-import { useMemo, useState } from "react";
-import { Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import type { Session } from "@supabase/supabase-js";
+import { StatusBar } from "expo-status-bar";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Linking,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
-type Tab = "home" | "cart" | "orders" | "commerce" | "profile";
+import type { CartLine, Category, Product, Store } from "./src/domain/marketplace";
+import {
+  canAddProduct,
+  filterStores,
+  formatARS,
+  nextQuantity,
+  normalizeSearch,
+  summarizeCart,
+} from "./src/domain/marketplace";
+import {
+  authRedirectUrl,
+  handleAuthDeepLink,
+  isSupabaseConfigured,
+  supabase,
+} from "./src/lib/supabase";
+import { loadCatalog, type Catalog } from "./src/services/catalog";
+import {
+  createOrder,
+  getMyStoreMembership,
+  listMyOrders,
+  listStoreOrders,
+  listStoreProducts,
+  setProductAvailability,
+  type OrderStatus,
+  type StoreMembership,
+  updateOrderStatus,
+} from "./src/services/orders";
 
-type Shop = {
-  id: string;
-  name: string;
-  category: string;
-  city: string;
-  rating: number;
-  eta: string;
-  delivery: string;
-  hero: string;
-  product: string;
-  price: number;
-};
+type Tab = "home" | "search" | "cart" | "orders" | "profile" | "commerce";
+type IconName = keyof typeof Ionicons.glyphMap;
 
-const shops: Shop[] = [
-  {
-    id: "parientes",
-    name: "Parientes Pizzería",
-    category: "Gastronomía",
-    city: "San Carlos",
-    rating: 4.8,
-    eta: "25-35 min",
-    delivery: "$1.200 envío",
-    hero: "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=900&auto=format&fit=crop",
-    product: "Pizza muzza grande",
-    price: 6900,
-  },
-  {
-    id: "sucre",
-    name: "Calzados Sucre",
-    category: "Moda",
-    city: "Eugenio Bustos",
-    rating: 4.7,
-    eta: "Retiro",
-    delivery: "Dirección al aceptar",
-    hero: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=900&auto=format&fit=crop",
-    product: "Zapatillas urbanas",
-    price: 38500,
-  },
-  {
-    id: "titan",
-    name: "Pet Shop Titán",
-    category: "Mascotas",
-    city: "Eugenio Bustos",
-    rating: 4.9,
-    eta: "20-30 min",
-    delivery: "$1.200 envío",
-    hero: "https://images.unsplash.com/photo-1601758228041-f3b2795255f1?w=900&auto=format&fit=crop",
-    product: "Alimento balanceado",
-    price: 14200,
-  },
-];
-
-const categories = ["Gastronomía", "Moda", "Mascotas", "Tecnología", "Salud", "Ferretería"];
-
-const formatARS = (value: number) =>
-  new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(value);
+const emptyCatalog: Catalog = { categories: [], stores: [], products: [], source: "local" };
 
 export default function App() {
-  const [signedIn, setSignedIn] = useState(false);
+  return (
+    <SafeAreaProvider>
+      <MarketplaceApp />
+    </SafeAreaProvider>
+  );
+}
+
+function MarketplaceApp() {
   const [tab, setTab] = useState<Tab>("home");
-  const [cart, setCart] = useState<Record<string, number>>({});
+  const [catalog, setCatalog] = useState<Catalog>(emptyCatalog);
+  const [loading, setLoading] = useState(true);
+  const [session, setSession] = useState<Session | null>(null);
+  const [cart, setCart] = useState<CartLine[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedStore, setSelectedStore] = useState<Store | null>(null);
+  const [membership, setMembership] = useState<StoreMembership | null>(null);
 
-  const cartLines = useMemo(
-    () => shops.filter((shop) => cart[shop.id]).map((shop) => ({ ...shop, qty: cart[shop.id] })),
-    [cart],
-  );
-  const total = cartLines.reduce((acc, line) => acc + line.price * line.qty, 0);
+  const refreshCatalog = async () => {
+    setLoading(true);
+    setCatalog(await loadCatalog());
+    setLoading(false);
+  };
 
-  const addToCart = (id: string) => setCart((prev) => ({ ...prev, [id]: (prev[id] ?? 0) + 1 }));
-  const updateQty = (id: string, qty: number) =>
-    setCart((prev) => {
-      const next = { ...prev };
-      if (qty <= 0) delete next[id];
-      else next[id] = qty;
-      return next;
+  useEffect(() => {
+    void refreshCatalog();
+    if (!supabase) return;
+    void supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) =>
+      setSession(nextSession),
+    );
+    return () => data.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!session) {
+      setMembership(null);
+      return;
+    }
+    void getMyStoreMembership()
+      .then(setMembership)
+      .catch(() => setMembership(null));
+  }, [session]);
+
+  useEffect(() => {
+    const open = (url: string | null) => {
+      if (url)
+        void handleAuthDeepLink(url).catch(() =>
+          Alert.alert("No pudimos completar el ingreso", "Pedí un nuevo enlace desde Mi perfil."),
+        );
+    };
+    void Linking.getInitialURL().then(open);
+    const subscription = Linking.addEventListener("url", ({ url }) => open(url));
+    return () => subscription.remove();
+  }, []);
+
+  const cartSummary = useMemo(() => summarizeCart(cart), [cart]);
+
+  const addProduct = (product: Product) => {
+    if (!canAddProduct(cart, product.storeId)) {
+      Alert.alert(
+        "Un comercio por pedido",
+        "Para cuidar tiempos y costos, terminá o vaciá la canasta actual antes de comprar en otro comercio.",
+      );
+      return;
+    }
+    setCart((current) => {
+      const existing = current.find((line) => line.productId === product.id);
+      if (existing)
+        return current.map((line) =>
+          line.productId === product.id ? { ...line, quantity: line.quantity + 1 } : line,
+        );
+      return [
+        ...current,
+        {
+          productId: product.id,
+          storeId: product.storeId,
+          name: product.name,
+          unitPrice: product.price,
+          quantity: 1,
+          imageUrl: product.imageUrl,
+        },
+      ];
     });
+  };
 
-  if (!signedIn) return <AuthScreen onEnter={() => setSignedIn(true)} />;
+  const updateQuantity = (productId: string, delta: number) => {
+    setCart((current) =>
+      current
+        .map((line) =>
+          line.productId === productId
+            ? { ...line, quantity: nextQuantity(line.quantity, delta) }
+            : line,
+        )
+        .filter((line) => line.quantity > 0),
+    );
+  };
+
+  const openCategory = (categoryId: string) => {
+    setSelectedCategory(categoryId);
+    setTab("search");
+  };
 
   return (
-    <SafeAreaProvider>
-      <SafeAreaView className="flex-1 bg-midnight">
-        <StatusBar style="light" />
-        {tab === "home" && <HomeScreen onAdd={addToCart} />}
-        {tab === "cart" && <CartScreen lines={cartLines} total={total} onQty={updateQty} />}
-        {tab === "orders" && <OrdersScreen />}
-        {tab === "commerce" && <CommerceScreen />}
-        {tab === "profile" && <ProfileScreen onSignOut={() => setSignedIn(false)} />}
-        <BottomTabs active={tab} onChange={setTab} cartCount={cartLines.reduce((acc, line) => acc + line.qty, 0)} />
-      </SafeAreaView>
-    </SafeAreaProvider>
+    <SafeAreaView className="flex-1 bg-slate-50">
+      <StatusBar style="dark" />
+      {selectedStore ? (
+        <StoreScreen
+          store={selectedStore}
+          products={catalog.products.filter((product) => product.storeId === selectedStore.id)}
+          onBack={() => setSelectedStore(null)}
+          onAdd={addProduct}
+        />
+      ) : (
+        <>
+          {tab === "home" && (
+            <HomeScreen
+              catalog={catalog}
+              loading={loading}
+              onRefresh={refreshCatalog}
+              onCategory={openCategory}
+              onStore={setSelectedStore}
+              onSearch={() => setTab("search")}
+            />
+          )}
+          {tab === "search" && (
+            <SearchScreen
+              catalog={catalog}
+              selectedCategory={selectedCategory}
+              onCategory={setSelectedCategory}
+              onStore={setSelectedStore}
+              onAdd={addProduct}
+            />
+          )}
+          {tab === "cart" && (
+            <CartScreen
+              lines={cart}
+              summary={cartSummary}
+              session={session}
+              onQuantity={updateQuantity}
+              onClear={() => setCart([])}
+              onConfirmed={() => {
+                setCart([]);
+                setTab("orders");
+              }}
+              onProfile={() => setTab("profile")}
+            />
+          )}
+          {tab === "orders" && <OrdersScreen session={session} />}
+          {tab === "profile" && (
+            <ProfileScreen
+              session={session}
+              membership={membership}
+              onCommerce={() => setTab("commerce")}
+            />
+          )}
+          {tab === "commerce" && membership && (
+            <CommerceScreen membership={membership} onBack={() => setTab("profile")} />
+          )}
+          <BottomTabs
+            active={tab}
+            onChange={(next) => {
+              setTab(next);
+              if (next !== "search") setSelectedCategory(null);
+            }}
+            cartCount={cartSummary.itemCount}
+          />
+        </>
+      )}
+    </SafeAreaView>
   );
 }
 
-function AuthScreen({ onEnter }: { onEnter: () => void }) {
+function HomeScreen({
+  catalog,
+  loading,
+  onRefresh,
+  onCategory,
+  onStore,
+  onSearch,
+}: {
+  catalog: Catalog;
+  loading: boolean;
+  onRefresh: () => Promise<void>;
+  onCategory: (id: string) => void;
+  onStore: (store: Store) => void;
+  onSearch: () => void;
+}) {
   return (
-    <SafeAreaProvider>
-      <SafeAreaView className="flex-1 bg-midnight px-6">
-        <StatusBar style="light" />
-        <View className="flex-1 justify-center">
-          <Text className="text-center text-5xl font-black text-brandSoft">A la Vuelta</Text>
-          <Text className="mt-2 text-center text-base text-mutedInk">Tu comercio local a un clic.</Text>
-          <View className="mt-14 gap-4">
-            <PrimaryButton icon="call-outline" label="Con número de teléfono" onPress={onEnter} />
-            <PrimaryButton icon="logo-google" label="Con Google" onPress={onEnter} />
+    <ScrollView
+      className="flex-1"
+      contentContainerClassName="px-4 pb-28"
+      refreshControl={
+        <RefreshControl refreshing={loading} onRefresh={onRefresh} colors={["#10B981"]} />
+      }
+    >
+      <View className="flex-row items-center justify-between pt-2">
+        <View>
+          <Text className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+            Entregar en
+          </Text>
+          <View className="mt-1 flex-row items-center">
+            <Ionicons name="location" size={18} color="#10B981" />
+            <Text className="ml-1 font-extrabold text-slate-900">Valle de Uco, Mendoza</Text>
           </View>
-          <Text className="my-6 text-center text-base text-ink">o registrate</Text>
-          <Pressable
-            onPress={onEnter}
-            className="rounded-3xl border border-cyanGlow/70 bg-cardBlue/70 p-6 shadow-glow"
-          >
-            <Ionicons name="storefront-outline" size={42} color="#6FEFF2" />
-            <Text className="mt-4 text-2xl font-bold text-ink">Soy Comercio</Text>
-            <Text className="mt-1 text-mutedInk">Vende y gestiona tu tienda desde el teléfono.</Text>
+        </View>
+        <View className="h-11 w-11 items-center justify-center rounded-full border-2 border-white bg-emerald-100 shadow-sm">
+          <Ionicons name="person" size={20} color="#047857" />
+        </View>
+      </View>
+
+      <Pressable
+        onPress={onSearch}
+        className="mt-5 flex-row items-center rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm"
+      >
+        <Ionicons name="search" size={18} color="#94A3B8" />
+        <Text className="ml-3 text-sm text-slate-400">Buscar comercios, productos o rubros</Text>
+      </Pressable>
+
+      <View className="mt-5 overflow-hidden rounded-3xl bg-indigo-600 p-5 shadow-lg">
+        <View className="max-w-[72%]">
+          <View className="self-start rounded-full bg-white/20 px-3 py-1">
+            <Text className="text-[10px] font-black uppercase tracking-wider text-white">
+              A la Vuelta
+            </Text>
+          </View>
+          <Text className="mt-3 text-2xl font-black leading-7 text-white">
+            Todo lo que necesitás, cerca tuyo
+          </Text>
+          <Text className="mt-2 text-xs leading-5 text-indigo-100">
+            Comprá local. Recibí en casa o coordiná el retiro.
+          </Text>
+        </View>
+        <Ionicons
+          name="storefront-outline"
+          size={104}
+          color="rgba(255,255,255,0.12)"
+          style={{ position: "absolute", right: -14, bottom: -18 }}
+        />
+      </View>
+
+      {catalog.source === "local" && !loading && (
+        <View className="mt-4 flex-row items-center rounded-2xl bg-amber-50 px-4 py-3">
+          <Ionicons name="cloud-offline-outline" size={18} color="#D97706" />
+          <Text className="ml-2 flex-1 text-xs font-semibold text-amber-800">
+            Catálogo de demostración disponible sin conexión.
+          </Text>
+        </View>
+      )}
+
+      <SectionTitle title="Nuestros rubros" />
+      <View className="flex-row flex-wrap justify-between">
+        {catalog.categories.map((category, index) => (
+          <CategoryCard
+            key={category.id}
+            category={category}
+            featured={index === 0}
+            onPress={() => onCategory(category.id)}
+          />
+        ))}
+      </View>
+
+      <SectionTitle title="Comercios recomendados" action="Ver todos" onAction={onSearch} />
+      {loading && catalog.stores.length === 0 ? (
+        <ActivityIndicator className="mt-8" color="#10B981" />
+      ) : (
+        catalog.stores
+          .slice(0, 4)
+          .map((store) => <StoreCard key={store.id} store={store} onPress={() => onStore(store)} />)
+      )}
+    </ScrollView>
+  );
+}
+
+function CategoryCard({
+  category,
+  featured,
+  onPress,
+}: {
+  category: Category;
+  featured: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={{
+        backgroundColor: featured ? category.color : "#FFFFFF",
+        width: featured ? "100%" : "48.5%",
+      }}
+      className="mb-3 min-h-24 overflow-hidden rounded-3xl border border-slate-100 p-4 shadow-sm"
+    >
+      <View
+        style={{ backgroundColor: featured ? "rgba(255,255,255,.22)" : `${category.color}18` }}
+        className="h-10 w-10 items-center justify-center rounded-2xl"
+      >
+        <Ionicons
+          name={category.icon as IconName}
+          size={22}
+          color={featured ? "#FFFFFF" : category.color}
+        />
+      </View>
+      <Text className={`mt-3 text-base font-black ${featured ? "text-white" : "text-slate-900"}`}>
+        {category.name}
+      </Text>
+      <Text className={`mt-0.5 text-[11px] ${featured ? "text-white/80" : "text-slate-500"}`}>
+        {category.description}
+      </Text>
+    </Pressable>
+  );
+}
+
+function SearchScreen({
+  catalog,
+  selectedCategory,
+  onCategory,
+  onStore,
+  onAdd,
+}: {
+  catalog: Catalog;
+  selectedCategory: string | null;
+  onCategory: (id: string | null) => void;
+  onStore: (store: Store) => void;
+  onAdd: (product: Product) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const normalized = normalizeSearch(query);
+  const visibleStores = useMemo(() => {
+    const direct = filterStores(catalog.stores, selectedCategory, query);
+    if (!normalized || selectedCategory) return direct;
+    const categoryIds = catalog.categories
+      .filter((category) => normalizeSearch(category.name).includes(normalized))
+      .map((category) => category.id);
+    const categoryMatches = catalog.stores.filter((store) =>
+      categoryIds.includes(store.categoryId),
+    );
+    return [...new Map([...direct, ...categoryMatches].map((store) => [store.id, store])).values()];
+  }, [catalog.categories, catalog.stores, normalized, query, selectedCategory]);
+  const visibleProducts = normalized
+    ? catalog.products.filter(
+        (product) =>
+          normalizeSearch(product.name).includes(normalized) &&
+          (!selectedCategory ||
+            catalog.stores.find((store) => store.id === product.storeId)?.categoryId ===
+              selectedCategory),
+      )
+    : [];
+
+  return (
+    <ScrollView
+      className="flex-1"
+      contentContainerClassName="px-4 pb-28"
+      keyboardShouldPersistTaps="handled"
+    >
+      <Text className="pt-2 text-3xl font-black text-slate-950">Buscar</Text>
+      <View className="mt-4 flex-row items-center rounded-2xl border border-slate-200 bg-white px-4 py-3">
+        <Ionicons name="search" size={20} color="#94A3B8" />
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          autoFocus
+          placeholder="Pizza, farmacia, herramientas…"
+          className="ml-3 flex-1 text-base text-slate-900"
+        />
+        {!!query && (
+          <Pressable onPress={() => setQuery("")}>
+            <Ionicons name="close-circle" size={20} color="#94A3B8" />
           </Pressable>
-        </View>
-      </SafeAreaView>
-    </SafeAreaProvider>
+        )}
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mt-4">
+        <FilterChip label="Todos" active={!selectedCategory} onPress={() => onCategory(null)} />
+        {catalog.categories.map((category) => (
+          <FilterChip
+            key={category.id}
+            label={category.name}
+            active={selectedCategory === category.id}
+            onPress={() => onCategory(category.id)}
+          />
+        ))}
+      </ScrollView>
+      {visibleProducts.length > 0 && (
+        <>
+          <SectionTitle title="Productos" />
+          {visibleProducts.map((product) => (
+            <ProductRow key={product.id} product={product} onAdd={() => onAdd(product)} />
+          ))}
+        </>
+      )}
+      {visibleStores.length > 0 && (
+        <SectionTitle title={selectedCategory ? "Comercios del rubro" : "Comercios"} />
+      )}
+      {visibleStores.length > 0 ? (
+        visibleStores.map((store) => (
+          <StoreCard key={store.id} store={store} onPress={() => onStore(store)} />
+        ))
+      ) : visibleProducts.length === 0 ? (
+        <EmptyState
+          icon="search-outline"
+          title="No encontramos resultados"
+          subtitle="Probá con otra palabra o quitá el filtro."
+        />
+      ) : null}
+    </ScrollView>
   );
 }
 
-function HomeScreen({ onAdd }: { onAdd: (id: string) => void }) {
+function StoreScreen({
+  store,
+  products,
+  onBack,
+  onAdd,
+}: {
+  store: Store;
+  products: Product[];
+  onBack: () => void;
+  onAdd: (product: Product) => void;
+}) {
   return (
-    <ScrollView className="flex-1 px-4" contentContainerClassName="pb-28">
-      <View className="pt-2">
-        <View className="flex-row items-center rounded-3xl bg-white/95 px-4 py-3">
-          <Ionicons name="search" size={18} color="#0B2440" />
-          <TextInput placeholder="Buscar comercios, rubros o productos" className="ml-2 flex-1 text-slate-700" />
-          <View className="rounded-full bg-brand p-2">
-            <Ionicons name="options-outline" size={16} color="#081A2E" />
+    <ScrollView className="flex-1 bg-slate-50" contentContainerClassName="pb-10">
+      <View className="relative">
+        <Image source={{ uri: store.imageUrl }} className="h-64 w-full bg-slate-200" />
+        <Pressable
+          onPress={onBack}
+          className="absolute left-4 top-4 h-11 w-11 items-center justify-center rounded-full bg-white/95 shadow"
+        >
+          <Ionicons name="arrow-back" size={22} color="#0F172A" />
+        </Pressable>
+      </View>
+      <View className="-mt-6 rounded-t-[30px] bg-slate-50 px-4 pt-6">
+        <View className="flex-row items-start justify-between">
+          <View className="flex-1">
+            <Text className="text-2xl font-black text-slate-950">{store.name}</Text>
+            <Text className="mt-1 text-sm text-slate-500">
+              {store.city} · ★ {store.rating?.toFixed(1)}
+            </Text>
+          </View>
+          <View className="rounded-full bg-emerald-100 px-3 py-2">
+            <Text className="text-xs font-bold text-emerald-700">Abierto</Text>
           </View>
         </View>
-        <Text className="mt-6 text-2xl font-extrabold text-ink">Rubros cerca tuyo</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mt-3">
-          {categories.map((category) => (
-            <View key={category} className="mr-3 rounded-2xl border border-cyanGlow/20 bg-cardBlue px-4 py-3">
-              <Text className="font-semibold text-ink">{category}</Text>
-            </View>
-          ))}
-        </ScrollView>
-        <View className="mt-7 flex-row items-center justify-between">
-          <Text className="text-xl font-extrabold text-ink">Recomendados</Text>
-          <Text className="font-semibold text-cyanGlow">Ver todo</Text>
+        <Text className="mt-3 leading-5 text-slate-600">{store.description}</Text>
+        <View className="mt-4 flex-row rounded-2xl bg-white p-4">
+          <Info icon="time-outline" value={store.eta ?? "A coordinar"} />
+          <Info icon="bicycle-outline" value={store.deliveryLabel ?? "Consultar"} />
         </View>
-        <View className="mt-3 gap-4">
-          {shops.map((shop) => (
-            <ShopCard key={shop.id} shop={shop} onAdd={onAdd} />
-          ))}
-        </View>
+        <SectionTitle title="Productos" />
+        {products.map((product) => (
+          <ProductCard key={product.id} product={product} onAdd={() => onAdd(product)} />
+        ))}
       </View>
     </ScrollView>
   );
 }
 
-function ShopCard({ shop, onAdd }: { shop: Shop; onAdd: (id: string) => void }) {
-  return (
-    <View className="overflow-hidden rounded-3xl border border-cyanGlow/25 bg-cardBlue shadow-glow">
-      <Image source={{ uri: shop.hero }} className="h-36 w-full" />
-      <View className="p-4">
-        <View className="flex-row items-start justify-between gap-3">
-          <View className="flex-1">
-            <Text className="text-xl font-extrabold text-ink">{shop.name}</Text>
-            <Text className="mt-1 text-sm text-mutedInk">{shop.category} · {shop.city}</Text>
-            <Text className="mt-2 text-sm text-brandSoft">★ {shop.rating} · {shop.eta} · {shop.delivery}</Text>
-          </View>
-          <Pressable onPress={() => onAdd(shop.id)} className="rounded-2xl bg-brand px-4 py-3">
-            <Text className="font-black text-midnight">Agregar</Text>
-          </Pressable>
-        </View>
-        <View className="mt-4 flex-row items-center justify-between rounded-2xl bg-midnight/55 p-3">
-          <Text className="font-semibold text-ink">{shop.product}</Text>
-          <Text className="font-black text-cyanGlow">{formatARS(shop.price)}</Text>
-        </View>
-      </View>
-    </View>
-  );
-}
-
 function CartScreen({
   lines,
-  total,
-  onQty,
+  summary,
+  session,
+  onQuantity,
+  onClear,
+  onConfirmed,
+  onProfile,
 }: {
-  lines: Array<Shop & { qty: number }>;
-  total: number;
-  onQty: (id: string, qty: number) => void;
+  lines: CartLine[];
+  summary: ReturnType<typeof summarizeCart>;
+  session: Session | null;
+  onQuantity: (id: string, delta: number) => void;
+  onClear: () => void;
+  onConfirmed: () => void;
+  onProfile: () => void;
 }) {
+  const [submitting, setSubmitting] = useState(false);
+  const [deliveryAddress, setDeliveryAddress] = useState("");
+  const submit = async () => {
+    if (!session) {
+      Alert.alert(
+        "Ingresá para pedir",
+        "Podés explorar y armar la canasta sin cuenta. Para confirmar necesitamos identificarte.",
+        [
+          { text: "Cancelar", style: "cancel" },
+          { text: "Ir a Perfil", onPress: onProfile },
+        ],
+      );
+      return;
+    }
+    if (deliveryAddress.trim().length < 3) {
+      Alert.alert(
+        "Falta la dirección",
+        "Ingresá la calle y altura donde querés recibir el pedido.",
+      );
+      return;
+    }
+    try {
+      setSubmitting(true);
+      await createOrder(lines, deliveryAddress.trim());
+      Alert.alert("Pedido confirmado", "El comercio ya recibió tu pedido.");
+      onConfirmed();
+    } catch {
+      Alert.alert("No pudimos confirmar", "Revisá la conexión, el stock y volvé a intentar.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
   return (
-    <ScrollView className="flex-1 px-4" contentContainerClassName="pb-28">
-      <Text className="mt-2 text-3xl font-black text-ink">Carrito</Text>
-      <Text className="mt-1 text-mutedInk">El comercio recibe el pedido recién después de validar pago y stock.</Text>
+    <ScrollView className="flex-1" contentContainerClassName="px-4 pb-28">
+      <View className="flex-row items-center justify-between pt-2">
+        <Text className="text-3xl font-black text-slate-950">Mi canasta</Text>
+        {lines.length > 0 && (
+          <Pressable onPress={onClear}>
+            <Text className="font-bold text-rose-500">Vaciar</Text>
+          </Pressable>
+        )}
+      </View>
+      <Text className="mt-1 text-sm text-slate-500">
+        Un comercio por pedido para entregas más simples.
+      </Text>
       <View className="mt-5 gap-3">
-        {lines.length === 0 && <EmptyState icon="cart-outline" title="Todavía no agregaste productos" />}
+        {lines.length === 0 && (
+          <EmptyState
+            icon="basket-outline"
+            title="Tu canasta está vacía"
+            subtitle="Explorá los comercios y agregá lo que necesitás."
+          />
+        )}
         {lines.map((line) => (
-          <View key={line.id} className="flex-row items-center rounded-3xl bg-cardBlue p-3">
-            <Image source={{ uri: line.hero }} className="h-16 w-16 rounded-2xl" />
-            <View className="ml-3 flex-1">
-              <Text className="font-bold text-ink">{line.product}</Text>
-              <Text className="text-sm text-mutedInk">{line.name}</Text>
-              <Text className="mt-1 font-black text-cyanGlow">{formatARS(line.price)}</Text>
-            </View>
-            <View className="flex-row items-center gap-2">
-              <Pressable onPress={() => onQty(line.id, line.qty - 1)} className="rounded-full bg-midnight p-2">
-                <Ionicons name="remove" color="#EAF8FF" size={16} />
-              </Pressable>
-              <Text className="min-w-6 text-center font-bold text-ink">{line.qty}</Text>
-              <Pressable onPress={() => onQty(line.id, line.qty + 1)} className="rounded-full bg-brand p-2">
-                <Ionicons name="add" color="#081A2E" size={16} />
-              </Pressable>
-            </View>
-          </View>
+          <CartRow key={line.productId} line={line} onQuantity={onQuantity} />
         ))}
       </View>
       {lines.length > 0 && (
-        <View className="mt-6 rounded-3xl bg-white p-5">
-          <Text className="text-sm font-semibold text-slate-500">Total estimado</Text>
-          <Text className="mt-1 text-3xl font-black text-slate-950">{formatARS(total)}</Text>
-          <Pressable className="mt-4 rounded-2xl bg-midnight py-4">
-            <Text className="text-center text-base font-black text-brandSoft">Proceder al checkout</Text>
+        <View className="mt-6 rounded-3xl bg-white p-5 shadow-sm">
+          <Text className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-400">
+            Dirección de entrega
+          </Text>
+          <TextInput
+            value={deliveryAddress}
+            onChangeText={setDeliveryAddress}
+            placeholder="Calle, altura y referencia"
+            className="mb-5 rounded-2xl border border-slate-200 px-4 py-3 text-slate-900"
+          />
+          <PriceRow label="Subtotal" value={summary.subtotal} />
+          <View className="my-3 h-px bg-slate-100" />
+          <PriceRow label="Total estimado" value={summary.total} strong />
+          <Pressable
+            disabled={submitting}
+            onPress={submit}
+            className="mt-5 flex-row items-center justify-center rounded-2xl bg-emerald-500 py-4"
+          >
+            {submitting ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <>
+                <Text className="text-base font-black text-white">Confirmar pedido</Text>
+                <Ionicons
+                  name="arrow-forward"
+                  size={20}
+                  color="#FFFFFF"
+                  style={{ marginLeft: 8 }}
+                />
+              </>
+            )}
           </Pressable>
         </View>
       )}
@@ -234,81 +619,355 @@ function CartScreen({
   );
 }
 
-function OrdersScreen() {
+function OrdersScreen({ session }: { session: Session | null }) {
+  const [orders, setOrders] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    if (!session) return;
+    setLoading(true);
+    void listMyOrders()
+      .then(setOrders)
+      .catch(() => setOrders([]))
+      .finally(() => setLoading(false));
+  }, [session]);
   return (
-    <ScrollView className="flex-1 px-4" contentContainerClassName="pb-28">
-      <Text className="mt-2 text-3xl font-black text-ink">Pedidos</Text>
-      <View className="mt-5 rounded-3xl bg-cardBlue p-5">
-        <Text className="text-lg font-black text-ink">Pedido demo enviado</Text>
-        <Text className="mt-1 text-mutedInk">Estado: esperando aceptación del comercio.</Text>
-        <View className="mt-4 rounded-2xl border border-cyanGlow/30 p-4">
-          <Text className="font-bold text-cyanGlow">QR/PIN protegido</Text>
-          <Text className="mt-1 text-sm text-mutedInk">Se libera solo cuando el comercio acepta la operación.</Text>
-        </View>
-      </View>
+    <ScrollView className="flex-1" contentContainerClassName="px-4 pb-28">
+      <Text className="pt-2 text-3xl font-black text-slate-950">Pedidos</Text>
+      {!session ? (
+        <EmptyState
+          icon="receipt-outline"
+          title="Ingresá para ver tus pedidos"
+          subtitle="Los pedidos quedan vinculados a tu cuenta."
+        />
+      ) : loading ? (
+        <ActivityIndicator className="mt-10" color="#10B981" />
+      ) : orders.length === 0 ? (
+        <EmptyState
+          icon="receipt-outline"
+          title="Todavía no hay pedidos"
+          subtitle="Cuando confirmes uno, vas a seguirlo desde acá."
+        />
+      ) : (
+        orders.map((order) => (
+          <View key={order.id} className="mt-4 rounded-3xl bg-white p-5">
+            <Text className="text-lg font-black text-slate-900">
+              {order.market_stores?.name ?? "Comercio local"}
+            </Text>
+            <Text className="mt-1 text-sm font-semibold capitalize text-emerald-600">
+              {order.status}
+            </Text>
+            <Text className="mt-3 text-xl font-black text-slate-950">
+              {formatARS(Number(order.total))}
+            </Text>
+          </View>
+        ))
+      )}
     </ScrollView>
   );
 }
 
-function CommerceScreen() {
+function ProfileScreen({
+  session,
+  membership,
+  onCommerce,
+}: {
+  session: Session | null;
+  membership: StoreMembership | null;
+  onCommerce: () => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const sendCode = async () => {
+    if (!supabase || !email.trim()) return;
+    try {
+      setBusy(true);
+      const { error } = await supabase.auth.signInWithOtp({
+        email: email.trim(),
+        options: { shouldCreateUser: true, emailRedirectTo: authRedirectUrl },
+      });
+      if (error) throw error;
+      Alert.alert("Revisá tu correo", "Te enviamos un enlace seguro para ingresar.");
+    } catch {
+      Alert.alert(
+        "No pudimos enviar el acceso",
+        "Verificá el correo y tu conexión e intentá de nuevo.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  const signOut = async () => {
+    await supabase?.auth.signOut();
+  };
   return (
-    <ScrollView className="flex-1 px-4" contentContainerClassName="pb-28">
-      <Text className="mt-2 text-3xl font-black text-ink">Panel comercio</Text>
-      <View className="mt-5 rounded-3xl bg-cardBlue p-5">
-        <Text className="text-mutedInk">Performance</Text>
-        <View className="mt-3 flex-row justify-between">
-          <Metric label="Ventas" value="$10K" />
-          <Metric label="Pedidos" value="12" />
-          <Metric label="Productos" value="20" />
+    <ScrollView
+      className="flex-1"
+      contentContainerClassName="px-4 pb-28"
+      keyboardShouldPersistTaps="handled"
+    >
+      <Text className="pt-2 text-3xl font-black text-slate-950">Mi perfil</Text>
+      {session ? (
+        <View className="mt-5 rounded-3xl bg-white p-5 shadow-sm">
+          <View className="h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
+            <Ionicons name="person" size={28} color="#047857" />
+          </View>
+          <Text className="mt-4 text-xl font-black text-slate-950">
+            {session.user.email ?? "Usuario A la Vuelta"}
+          </Text>
+          <Text className="mt-1 text-sm text-slate-500">
+            {membership ? `${membership.role} · ${membership.store.name}` : "Cliente"}
+          </Text>
+          <MenuRow icon="location-outline" label="Direcciones de entrega" />
+          {membership ? (
+            <MenuRow icon="storefront-outline" label="Panel de mi comercio" onPress={onCommerce} />
+          ) : (
+            <MenuRow
+              icon="storefront-outline"
+              label="Quiero vender en A la Vuelta"
+              onPress={() =>
+                Alert.alert(
+                  "Sumá tu comercio",
+                  "Estamos incorporando comercios de forma acompañada. Escribinos desde soporte para validar tus datos.",
+                )
+              }
+            />
+          )}
+          <Pressable onPress={signOut} className="mt-5 rounded-2xl bg-slate-100 py-4">
+            <Text className="text-center font-black text-slate-700">Cerrar sesión</Text>
+          </Pressable>
         </View>
-      </View>
-      <View className="mt-4 rounded-3xl bg-white p-5">
-        <Text className="text-xl font-black text-slate-950">Últimos pedidos</Text>
-        <Text className="mt-2 text-slate-500">Aceptar, rechazar y marcar listo desde el teléfono.</Text>
-      </View>
+      ) : (
+        <View className="mt-5 rounded-3xl bg-white p-5 shadow-sm">
+          <View className="h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100">
+            <Ionicons name="lock-closed-outline" size={25} color="#047857" />
+          </View>
+          <Text className="mt-4 text-xl font-black text-slate-950">Ingresá de forma segura</Text>
+          <Text className="mt-2 leading-5 text-slate-500">
+            Te mandamos un enlace de acceso. No necesitás recordar una contraseña.
+          </Text>
+          <TextInput
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            placeholder="tu@email.com"
+            className="mt-5 rounded-2xl border border-slate-200 px-4 py-4 text-base"
+          />
+          <Pressable
+            disabled={busy || !isSupabaseConfigured}
+            onPress={sendCode}
+            className={`mt-3 rounded-2xl py-4 ${isSupabaseConfigured ? "bg-emerald-500" : "bg-slate-300"}`}
+          >
+            <Text className="text-center font-black text-white">
+              {busy ? "Enviando…" : "Enviar acceso"}
+            </Text>
+          </Pressable>
+          {!isSupabaseConfigured && (
+            <Text className="mt-3 text-center text-xs text-amber-700">
+              Configurá Supabase para habilitar el ingreso.
+            </Text>
+          )}
+        </View>
+      )}
     </ScrollView>
   );
 }
 
-function ProfileScreen({ onSignOut }: { onSignOut: () => void }) {
+const nextStoreActions: Partial<
+  Record<OrderStatus, Array<{ label: string; status: OrderStatus }>>
+> = {
+  submitted: [
+    { label: "Aceptar", status: "accepted" },
+    { label: "Rechazar", status: "rejected" },
+  ],
+  accepted: [
+    { label: "Preparando", status: "preparing" },
+    { label: "Cancelar", status: "cancelled" },
+  ],
+  preparing: [{ label: "Marcar listo", status: "ready" }],
+  ready: [{ label: "Entregado", status: "completed" }],
+};
+
+function CommerceScreen({
+  membership,
+  onBack,
+}: {
+  membership: StoreMembership;
+  onBack: () => void;
+}) {
+  const [orders, setOrders] = useState<any[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = async () => {
+    setLoading(true);
+    try {
+      const [nextOrders, nextProducts] = await Promise.all([
+        listStoreOrders(membership.storeId),
+        listStoreProducts(membership.storeId),
+      ]);
+      setOrders(nextOrders);
+      setProducts(nextProducts);
+    } catch {
+      Alert.alert("No pudimos cargar el panel", "Revisá la conexión y volvé a intentar.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+  }, [membership.storeId]);
+
+  const moveOrder = async (orderId: string, status: OrderStatus) => {
+    try {
+      await updateOrderStatus(orderId, status);
+      await refresh();
+    } catch {
+      Alert.alert(
+        "No pudimos actualizar el pedido",
+        "El estado cambió o no tenés permiso para esa acción.",
+      );
+    }
+  };
+
+  const toggleProduct = async (product: Product) => {
+    try {
+      await setProductAvailability(product.id, !product.available);
+      await refresh();
+    } catch {
+      Alert.alert("No pudimos actualizar el producto", "Revisá la conexión y volvé a intentar.");
+    }
+  };
+
   return (
-    <ScrollView className="flex-1 px-4" contentContainerClassName="pb-28">
-      <Text className="mt-2 text-3xl font-black text-ink">Perfil</Text>
-      <View className="mt-5 rounded-3xl bg-cardBlue p-5">
-        <Text className="text-lg font-black text-ink">Usuario local</Text>
-        <Text className="mt-1 text-mutedInk">Cliente · Comercio pendiente · Admin no habilitado</Text>
-        <Pressable onPress={onSignOut} className="mt-5 rounded-2xl bg-white py-4">
-          <Text className="text-center font-black text-midnight">Cerrar sesión demo</Text>
+    <ScrollView className="flex-1" contentContainerClassName="px-4 pb-10">
+      <View className="flex-row items-center pt-2">
+        <Pressable
+          onPress={onBack}
+          className="mr-3 h-11 w-11 items-center justify-center rounded-full bg-white"
+        >
+          <Ionicons name="arrow-back" size={22} color="#0F172A" />
         </Pressable>
+        <View className="flex-1">
+          <Text className="text-2xl font-black text-slate-950">{membership.store.name}</Text>
+          <Text className="text-sm text-slate-500">Panel móvil · {membership.role}</Text>
+        </View>
       </View>
+
+      <View className="mt-5 flex-row justify-between rounded-3xl bg-emerald-500 p-5">
+        <Metric label="Pedidos" value={String(orders.length)} />
+        <Metric label="Productos" value={String(products.length)} />
+        <Metric
+          label="Activos"
+          value={String(products.filter((product) => product.available).length)}
+        />
+      </View>
+
+      <SectionTitle title="Pedidos recientes" />
+      {loading ? (
+        <ActivityIndicator color="#10B981" />
+      ) : orders.length === 0 ? (
+        <EmptyState
+          icon="receipt-outline"
+          title="No hay pedidos pendientes"
+          subtitle="Los nuevos pedidos aparecerán acá."
+        />
+      ) : (
+        orders.map((order) => (
+          <View key={order.id} className="mb-3 rounded-3xl bg-white p-4 shadow-sm">
+            <View className="flex-row justify-between">
+              <View className="flex-1">
+                <Text className="font-black text-slate-900">
+                  Pedido {String(order.id).slice(0, 8)}
+                </Text>
+                <Text className="mt-1 text-xs text-slate-500">{order.delivery_address}</Text>
+              </View>
+              <Text className="font-black text-emerald-600">{formatARS(Number(order.total))}</Text>
+            </View>
+            <Text className="mt-3 text-xs font-bold uppercase text-slate-500">{order.status}</Text>
+            <View className="mt-3 flex-row flex-wrap gap-2">
+              {(nextStoreActions[order.status as OrderStatus] ?? []).map((action) => (
+                <Pressable
+                  key={action.status}
+                  onPress={() => moveOrder(order.id, action.status)}
+                  className="rounded-xl bg-slate-950 px-4 py-2.5"
+                >
+                  <Text className="text-xs font-black text-white">{action.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ))
+      )}
+
+      <SectionTitle title="Disponibilidad" />
+      {products.map((product) => (
+        <View key={product.id} className="mb-3 flex-row items-center rounded-2xl bg-white p-3">
+          <Image source={{ uri: product.imageUrl }} className="h-14 w-14 rounded-xl bg-slate-100" />
+          <View className="ml-3 flex-1">
+            <Text className="font-black text-slate-900">{product.name}</Text>
+            <Text className="mt-1 text-xs text-slate-500">Stock: {product.stock}</Text>
+          </View>
+          <Pressable
+            onPress={() => toggleProduct(product)}
+            className={`rounded-full px-3 py-2 ${product.available ? "bg-emerald-100" : "bg-slate-100"}`}
+          >
+            <Text
+              className={`text-xs font-black ${product.available ? "text-emerald-700" : "text-slate-500"}`}
+            >
+              {product.available ? "Activo" : "Pausado"}
+            </Text>
+          </Pressable>
+        </View>
+      ))}
     </ScrollView>
   );
 }
 
-function BottomTabs({ active, onChange, cartCount }: { active: Tab; onChange: (tab: Tab) => void; cartCount: number }) {
-  const tabs: Array<{ key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
-    { key: "home", label: "Inicio", icon: "home-outline" },
-    { key: "cart", label: "Carrito", icon: "cart-outline" },
-    { key: "orders", label: "Pedidos", icon: "checkmark-circle-outline" },
-    { key: "commerce", label: "Comercio", icon: "storefront-outline" },
-    { key: "profile", label: "Perfil", icon: "person-outline" },
+function BottomTabs({
+  active,
+  onChange,
+  cartCount,
+}: {
+  active: Tab;
+  onChange: (tab: Tab) => void;
+  cartCount: number;
+}) {
+  const tabs: Array<{ key: Tab; label: string; icon: IconName; activeIcon: IconName }> = [
+    { key: "home", label: "Inicio", icon: "home-outline", activeIcon: "home" },
+    { key: "search", label: "Buscar", icon: "search-outline", activeIcon: "search" },
+    { key: "cart", label: "Canasta", icon: "basket-outline", activeIcon: "basket" },
+    { key: "orders", label: "Pedidos", icon: "receipt-outline", activeIcon: "receipt" },
+    { key: "profile", label: "Perfil", icon: "person-outline", activeIcon: "person" },
   ];
-
   return (
-    <View className="absolute bottom-5 left-4 right-4 flex-row justify-between rounded-3xl border border-cyanGlow/20 bg-cardBlue/95 px-3 py-3">
+    <View className="absolute bottom-0 left-0 right-0 flex-row justify-around border-t border-slate-100 bg-white px-2 pb-2 pt-3">
       {tabs.map((item) => {
-        const selected = item.key === active;
+        const selected = active === item.key;
         return (
-          <Pressable key={item.key} onPress={() => onChange(item.key)} className="items-center px-2">
-            <View className={selected ? "rounded-full bg-brand/20 p-2" : "p-2"}>
-              <Ionicons name={item.icon} size={20} color={selected ? "#6FEFF2" : "#96B6C8"} />
+          <Pressable
+            key={item.key}
+            onPress={() => onChange(item.key)}
+            className="min-w-14 items-center"
+          >
+            <View>
+              <Ionicons
+                name={selected ? item.activeIcon : item.icon}
+                size={22}
+                color={selected ? "#10B981" : "#94A3B8"}
+              />
               {item.key === "cart" && cartCount > 0 && (
-                <View className="absolute -right-1 -top-1 rounded-full bg-warning px-1.5">
-                  <Text className="text-[10px] font-black text-midnight">{cartCount}</Text>
+                <View className="absolute -right-3 -top-2 min-w-5 items-center rounded-full bg-rose-500 px-1">
+                  <Text className="text-[10px] font-black text-white">{cartCount}</Text>
                 </View>
               )}
             </View>
-            <Text className={selected ? "text-xs font-bold text-cyanGlow" : "text-xs text-mutedInk"}>{item.label}</Text>
+            <Text
+              className={`mt-1 text-[10px] ${selected ? "font-black text-emerald-600" : "font-semibold text-slate-400"}`}
+            >
+              {item.label}
+            </Text>
           </Pressable>
         );
       })}
@@ -316,11 +975,201 @@ function BottomTabs({ active, onChange, cartCount }: { active: Tab; onChange: (t
   );
 }
 
-function PrimaryButton({ icon, label, onPress }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void }) {
+function StoreCard({ store, onPress }: { store: Store; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} className="flex-row items-center justify-center rounded-full bg-brandSoft py-4 shadow-glow">
-      <Ionicons name={icon} size={24} color="#081A2E" />
-      <Text className="ml-3 text-lg font-black text-midnight">{label}</Text>
+    <Pressable
+      onPress={onPress}
+      className="mb-4 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm"
+    >
+      <Image source={{ uri: store.imageUrl }} className="h-36 w-full bg-slate-200" />
+      <View className="p-4">
+        <View className="flex-row items-start justify-between">
+          <View className="flex-1">
+            <Text className="text-lg font-black text-slate-950">{store.name}</Text>
+            <Text className="mt-1 text-sm text-slate-500">
+              {store.city} · {store.description}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={21} color="#94A3B8" />
+        </View>
+        <Text className="mt-3 text-xs font-bold text-emerald-600">
+          ★ {store.rating?.toFixed(1)} · {store.eta} · {store.deliveryLabel}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
+function ProductCard({ product, onAdd }: { product: Product; onAdd: () => void }) {
+  return (
+    <View className="mb-4 overflow-hidden rounded-3xl bg-white shadow-sm">
+      <Image source={{ uri: product.imageUrl }} className="h-40 w-full bg-slate-200" />
+      <View className="p-4">
+        <Text className="text-lg font-black text-slate-950">{product.name}</Text>
+        {product.description && (
+          <Text className="mt-1 text-sm text-slate-500">{product.description}</Text>
+        )}
+        <View className="mt-4 flex-row items-center justify-between">
+          <Text className="text-xl font-black text-emerald-600">{formatARS(product.price)}</Text>
+          <Pressable
+            onPress={onAdd}
+            className="flex-row items-center rounded-2xl bg-slate-950 px-4 py-3"
+          >
+            <Ionicons name="add" size={18} color="#FFFFFF" />
+            <Text className="ml-1 font-black text-white">Agregar</Text>
+          </Pressable>
+        </View>
+      </View>
+    </View>
+  );
+}
+function ProductRow({ product, onAdd }: { product: Product; onAdd: () => void }) {
+  return (
+    <View className="mb-3 flex-row items-center rounded-2xl bg-white p-3">
+      <Image source={{ uri: product.imageUrl }} className="h-16 w-16 rounded-xl bg-slate-100" />
+      <View className="ml-3 flex-1">
+        <Text className="font-black text-slate-900">{product.name}</Text>
+        <Text className="mt-1 font-bold text-emerald-600">{formatARS(product.price)}</Text>
+      </View>
+      <Pressable
+        onPress={onAdd}
+        className="h-10 w-10 items-center justify-center rounded-full bg-slate-950"
+      >
+        <Ionicons name="add" size={20} color="#FFFFFF" />
+      </Pressable>
+    </View>
+  );
+}
+function CartRow({
+  line,
+  onQuantity,
+}: {
+  line: CartLine;
+  onQuantity: (id: string, delta: number) => void;
+}) {
+  return (
+    <View className="flex-row items-center rounded-3xl bg-white p-3 shadow-sm">
+      <Image source={{ uri: line.imageUrl }} className="h-16 w-16 rounded-2xl bg-slate-100" />
+      <View className="ml-3 flex-1">
+        <Text className="font-black text-slate-900">{line.name}</Text>
+        <Text className="mt-1 font-bold text-emerald-600">
+          {formatARS(line.unitPrice * line.quantity)}
+        </Text>
+      </View>
+      <View className="flex-row items-center rounded-xl bg-slate-50 p-1">
+        <QuantityButton icon="remove" onPress={() => onQuantity(line.productId, -1)} />
+        <Text className="w-8 text-center font-black text-slate-900">{line.quantity}</Text>
+        <QuantityButton icon="add" onPress={() => onQuantity(line.productId, 1)} />
+      </View>
+    </View>
+  );
+}
+function QuantityButton({ icon, onPress }: { icon: IconName; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      className="h-8 w-8 items-center justify-center rounded-lg bg-white shadow-sm"
+    >
+      <Ionicons name={icon} size={16} color="#334155" />
+    </Pressable>
+  );
+}
+function FilterChip({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      className={`mr-2 rounded-full px-4 py-2.5 ${active ? "bg-emerald-500" : "border border-slate-200 bg-white"}`}
+    >
+      <Text className={`text-xs font-bold ${active ? "text-white" : "text-slate-600"}`}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+function SectionTitle({
+  title,
+  action,
+  onAction,
+}: {
+  title: string;
+  action?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <View className="mb-3 mt-7 flex-row items-center justify-between">
+      <Text className="text-lg font-black text-slate-950">{title}</Text>
+      {action && (
+        <Pressable onPress={onAction}>
+          <Text className="text-xs font-bold text-emerald-600">{action}</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+function EmptyState({
+  icon,
+  title,
+  subtitle,
+}: {
+  icon: IconName;
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <View className="mt-6 items-center rounded-3xl border border-slate-100 bg-white p-8">
+      <View className="h-16 w-16 items-center justify-center rounded-full bg-emerald-50">
+        <Ionicons name={icon} size={30} color="#10B981" />
+      </View>
+      <Text className="mt-4 text-center text-lg font-black text-slate-900">{title}</Text>
+      <Text className="mt-2 text-center text-sm leading-5 text-slate-500">{subtitle}</Text>
+    </View>
+  );
+}
+function Info({ icon, value }: { icon: IconName; value: string }) {
+  return (
+    <View className="mr-6 flex-row items-center">
+      <Ionicons name={icon} size={18} color="#10B981" />
+      <Text className="ml-2 text-xs font-bold text-slate-600">{value}</Text>
+    </View>
+  );
+}
+function PriceRow({ label, value, strong }: { label: string; value: number; strong?: boolean }) {
+  return (
+    <View className="flex-row items-center justify-between">
+      <Text className={strong ? "text-lg font-black text-slate-950" : "text-sm text-slate-500"}>
+        {label}
+      </Text>
+      <Text className={strong ? "text-xl font-black text-slate-950" : "font-bold text-slate-700"}>
+        {formatARS(value)}
+      </Text>
+    </View>
+  );
+}
+function MenuRow({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: IconName;
+  label: string;
+  onPress?: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      className="mt-4 flex-row items-center border-t border-slate-100 pt-4"
+    >
+      <Ionicons name={icon} size={21} color="#10B981" />
+      <Text className="ml-3 flex-1 font-bold text-slate-700">{label}</Text>
+      <Ionicons name="chevron-forward" size={19} color="#94A3B8" />
     </Pressable>
   );
 }
@@ -328,17 +1177,8 @@ function PrimaryButton({ icon, label, onPress }: { icon: keyof typeof Ionicons.g
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <View>
-      <Text className="text-2xl font-black text-brandSoft">{value}</Text>
-      <Text className="text-xs text-mutedInk">{label}</Text>
-    </View>
-  );
-}
-
-function EmptyState({ icon, title }: { icon: keyof typeof Ionicons.glyphMap; title: string }) {
-  return (
-    <View className="items-center rounded-3xl border border-cyanGlow/20 bg-cardBlue p-8">
-      <Ionicons name={icon} color="#6FEFF2" size={44} />
-      <Text className="mt-3 text-center text-lg font-bold text-ink">{title}</Text>
+      <Text className="text-2xl font-black text-white">{value}</Text>
+      <Text className="mt-1 text-xs font-semibold text-emerald-50">{label}</Text>
     </View>
   );
 }
