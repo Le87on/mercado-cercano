@@ -44,6 +44,8 @@ coverage/
 .wrangler/
 
 # Editor directories and OS files
+.worktrees/
+.runtime/
 .vscode/*
 !.vscode/extensions.json
 .idea/
