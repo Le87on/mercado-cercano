@@ -6,6 +6,8 @@ import { useMemo, useState } from "react";
 import { Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
+import { AppProviders } from "./src/app/AppProviders";
+
 type Tab = "home" | "cart" | "orders" | "commerce" | "profile";
 
 type Shop = {
@@ -66,6 +68,14 @@ const formatARS = (value: number) =>
   new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(value);
 
 export default function App() {
+  return (
+    <AppProviders>
+      <MarketplaceApp />
+    </AppProviders>
+  );
+}
+
+function MarketplaceApp() {
   const [signedIn, setSignedIn] = useState(false);
   const [tab, setTab] = useState<Tab>("home");
   const [cart, setCart] = useState<Record<string, number>>({});
@@ -275,40 +285,45 @@ function ProfileScreen({ onSignOut }: { onSignOut: () => void }) {
     <ScrollView className="flex-1 px-4" contentContainerClassName="pb-28">
       <Text className="mt-2 text-3xl font-black text-ink">Perfil</Text>
       <View className="mt-5 rounded-3xl bg-cardBlue p-5">
-        <Text className="text-lg font-black text-ink">Usuario local</Text>
-        <Text className="mt-1 text-mutedInk">Cliente · Comercio pendiente · Admin no habilitado</Text>
-        <Pressable onPress={onSignOut} className="mt-5 rounded-2xl bg-white py-4">
-          <Text className="text-center font-black text-midnight">Cerrar sesión demo</Text>
-        </Pressable>
+        <View className="h-20 w-20 items-center justify-center rounded-full bg-brand">
+          <Ionicons name="person" color="#081A2E" size={36} />
+        </View>
+        <Text className="mt-4 text-2xl font-black text-ink">Usuario de prueba</Text>
+        <Text className="mt-1 text-mutedInk">Cliente · Valle de Uco</Text>
       </View>
+      <Pressable onPress={onSignOut} className="mt-4 rounded-3xl border border-red-400/30 bg-red-950/30 p-4">
+        <Text className="text-center font-bold text-red-200">Cerrar sesión</Text>
+      </Pressable>
     </ScrollView>
   );
 }
 
 function BottomTabs({ active, onChange, cartCount }: { active: Tab; onChange: (tab: Tab) => void; cartCount: number }) {
-  const tabs: Array<{ key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
-    { key: "home", label: "Inicio", icon: "home-outline" },
-    { key: "cart", label: "Carrito", icon: "cart-outline" },
-    { key: "orders", label: "Pedidos", icon: "checkmark-circle-outline" },
-    { key: "commerce", label: "Comercio", icon: "storefront-outline" },
-    { key: "profile", label: "Perfil", icon: "person-outline" },
+  const tabs: Array<{ id: Tab; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
+    { id: "home", label: "Inicio", icon: "home-outline" },
+    { id: "cart", label: "Carrito", icon: "cart-outline" },
+    { id: "orders", label: "Pedidos", icon: "receipt-outline" },
+    { id: "commerce", label: "Comercio", icon: "storefront-outline" },
+    { id: "profile", label: "Perfil", icon: "person-outline" },
   ];
 
   return (
-    <View className="absolute bottom-5 left-4 right-4 flex-row justify-between rounded-3xl border border-cyanGlow/20 bg-cardBlue/95 px-3 py-3">
+    <View className="absolute bottom-0 left-0 right-0 flex-row border-t border-cyanGlow/20 bg-midnight/95 px-2 pb-3 pt-2">
       {tabs.map((item) => {
-        const selected = item.key === active;
+        const selected = item.id === active;
         return (
-          <Pressable key={item.key} onPress={() => onChange(item.key)} className="items-center px-2">
-            <View className={selected ? "rounded-full bg-brand/20 p-2" : "p-2"}>
-              <Ionicons name={item.icon} size={20} color={selected ? "#6FEFF2" : "#96B6C8"} />
-              {item.key === "cart" && cartCount > 0 && (
-                <View className="absolute -right-1 -top-1 rounded-full bg-warning px-1.5">
-                  <Text className="text-[10px] font-black text-midnight">{cartCount}</Text>
+          <Pressable key={item.id} onPress={() => onChange(item.id)} className="flex-1 items-center py-1">
+            <View className="relative">
+              <Ionicons name={item.icon} size={24} color={selected ? "#6FEFF2" : "#92A8BB"} />
+              {item.id === "cart" && cartCount > 0 && (
+                <View className="absolute -right-3 -top-2 min-w-5 rounded-full bg-brand px-1">
+                  <Text className="text-center text-xs font-black text-midnight">{cartCount}</Text>
                 </View>
               )}
             </View>
-            <Text className={selected ? "text-xs font-bold text-cyanGlow" : "text-xs text-mutedInk"}>{item.label}</Text>
+            <Text className={`mt-1 text-[11px] font-semibold ${selected ? "text-cyanGlow" : "text-mutedInk"}`}>
+              {item.label}
+            </Text>
           </Pressable>
         );
       })}
@@ -316,11 +331,19 @@ function BottomTabs({ active, onChange, cartCount }: { active: Tab; onChange: (t
   );
 }
 
-function PrimaryButton({ icon, label, onPress }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void }) {
+function PrimaryButton({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+}) {
   return (
-    <Pressable onPress={onPress} className="flex-row items-center justify-center rounded-full bg-brandSoft py-4 shadow-glow">
-      <Ionicons name={icon} size={24} color="#081A2E" />
-      <Text className="ml-3 text-lg font-black text-midnight">{label}</Text>
+    <Pressable onPress={onPress} className="flex-row items-center justify-center rounded-3xl bg-brand px-5 py-4">
+      <Ionicons name={icon} size={22} color="#081A2E" />
+      <Text className="ml-3 text-base font-black text-midnight">{label}</Text>
     </Pressable>
   );
 }
@@ -328,8 +351,8 @@ function PrimaryButton({ icon, label, onPress }: { icon: keyof typeof Ionicons.g
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <View>
-      <Text className="text-2xl font-black text-brandSoft">{value}</Text>
-      <Text className="text-xs text-mutedInk">{label}</Text>
+      <Text className="text-2xl font-black text-cyanGlow">{value}</Text>
+      <Text className="text-sm text-mutedInk">{label}</Text>
     </View>
   );
 }
